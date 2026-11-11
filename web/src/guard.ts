@@ -123,7 +123,7 @@ async function signIn(): Promise<void> {
 async function linkTelegram(): Promise<void> {
   try {
     const r = await api<{ url: string; code: string; expiresAt: number }>("/api/guard/link", {});
-    window.open(r.url, "_blank", "noopener");
+    openTelegram(r.url, status?.botUsername ?? "seal_guard_bot", r.code);
     note("Press Start in Telegram. This page updates by itself once the bot has linked.", "busy");
     showLinkHelp(r.code);
     if (pollTimer) clearInterval(pollTimer);
@@ -144,7 +144,27 @@ async function linkTelegram(): Promise<void> {
   }
 }
 
-/** For when the t.me link doesn't open the Telegram app: the same /start command, to send by hand. */
+/**
+ * Opens the bot with the link code. Phones hand t.me links straight to the Telegram app. On a computer the t.me
+ * web page sits in between and its START BOT button has to launch the desktop app a second time, which browsers
+ * (Brave in particular) can quietly block; the tg:// link goes to the desktop app directly. Either way the browser
+ * may ask "Open Telegram?" first, and in the app the user presses START at the bottom of the chat.
+ */
+function openTelegram(webUrl: string, bot: string, code: string): void {
+  const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  if (mobile) {
+    window.location.href = webUrl;
+    return;
+  }
+  const a = document.createElement("a");
+  a.href = `tg://resolve?domain=${encodeURIComponent(bot)}&start=${encodeURIComponent(code)}`;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+/** For when the link doesn't open the Telegram app: the same /start command, to send by hand. */
 function showLinkHelp(code: string): void {
   const box = $("#glinkhelp");
   const cmd = `/start ${code}`;
