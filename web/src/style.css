@@ -47,3 +47,8 @@ h2{font-size:18px;color:var(--acc);margin:30px 0 8px}
 .limits ul,.how ol,.hardware ul{color:var(--dim);padding-left:20px} .limits li,.how li,.hardware li{margin:0 0 8px;font-size:15px}
 .hardware p{color:var(--dim);margin:0 0 10px}
 footer{max-width:820px;margin:20px auto 0;padding:18px;border-top:1px solid var(--line);font-size:13px;color:var(--dim);text-align:center}
+.guardcard{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:4px 18px 14px;margin-top:22px}
+.guardcard h2{margin-top:14px}
+.guardcard p{margin:0 0 10px;color:var(--dim)}
+.guardcard .okline{color:var(--fg)}
+.status.ok{color:var(--good)}

@@ -1,9 +1,10 @@
-// SealGuard's Worker: serves the built page (dist/) and relays a short list of read-only RPC methods
-// to the RPC provider so the API key never reaches the browser. Nothing here signs anything.
-export interface Env {
+// SealGuard's Worker: serves the built page (dist/), relays a short list of read-only RPC methods to the RPC
+// provider so the API key never reaches the browser, and runs the guard (sign-in, Telegram link, payment,
+// cron re-scans). Nothing here signs anything.
+import { handleApi, runGuards, type GuardEnv } from "./guard";
+
+export interface Env extends GuardEnv {
   ASSETS: Fetcher;
-  /** Helius (or any DAS-capable) RPC URL with its key, set as a secret. */
-  RPC_URL: string;
 }
 
 /** Methods the page may call. Reads, a simulation, and sending a transaction the wallet already signed. */
@@ -32,7 +33,12 @@ function checkRequest(body: any): string | null {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    if (url.pathname === "/health") return json({ ok: true, rpc: Boolean(env.RPC_URL) });
+    const now = Date.now();
+    if (url.pathname === "/health") {
+      let db = false;
+      try { await env.DB.prepare("SELECT 1").first(); db = true; } catch { /* no binding or no table yet */ }
+      return json({ ok: true, rpc: Boolean(env.RPC_URL), db, guard: Boolean(env.SESSION_SECRET), telegram: Boolean(env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_BOT_USERNAME) });
+    }
     if (url.pathname === "/rpc") {
       if (request.method !== "POST") return json({ error: "POST only" }, 405);
       if (!env.RPC_URL) return json({ error: "RPC not configured" }, 503);
@@ -44,6 +50,15 @@ export default {
       const text = await upstream.text();
       return new Response(text, { status: upstream.ok ? 200 : 502, headers: { "content-type": "application/json", "cache-control": "no-store" } });
     }
+    if (url.pathname.startsWith("/api/")) {
+      const r = await handleApi(request, env, url.pathname, now);
+      if (r) return r;
+      return json({ error: "not_found" }, 404);
+    }
     return env.ASSETS.fetch(request);
+  },
+
+  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(runGuards(env, Date.now()).then((r) => console.log("guards", JSON.stringify(r))));
   },
 } satisfies ExportedHandler<Env>;

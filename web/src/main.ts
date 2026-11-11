@@ -5,6 +5,7 @@ import { fetchScanInput, rpc } from "./rpc";
 import { scan, shortKey, solWithUsd, type Action, type Finding, type ScanResult, type Severity } from "./scan";
 import { batchActions, buildTransaction, describeAction } from "./tx";
 import { connect, disconnect, listWallets, onWalletsChange, registerMobile, signAndSend, type Connected } from "./wallet";
+import { setGuardWallet } from "./guard";
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector(sel) as T;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
@@ -47,6 +48,7 @@ async function doConnect(w: import("@wallet-standard/base").Wallet): Promise<voi
     address = connected.address;
     showSession();
     setStatus("");
+    void setGuardWallet(connected);
     await doScan();
   } catch (e: any) {
     setStatus(e?.message || "The wallet didn't connect", "err");
@@ -65,6 +67,7 @@ function doScanAddress(ev: Event): void {
     return;
   }
   connected = null;
+  void setGuardWallet(null);
   showSession();
   setStatus("");
   void doScan();
@@ -72,6 +75,7 @@ function doScanAddress(ev: Event): void {
 
 async function doDisconnect(): Promise<void> {
   if (connected) await disconnect(connected);
+  void setGuardWallet(null);
   connected = null; address = null; result = null; selected = new Set();
   $("#session").hidden = true;
   $("#report").hidden = true;
