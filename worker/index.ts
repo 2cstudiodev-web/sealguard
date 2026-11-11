@@ -37,7 +37,18 @@ export default {
     if (url.pathname === "/health") {
       let db = false;
       try { await env.DB.prepare("SELECT 1").first(); db = true; } catch { /* no binding or no table yet */ }
-      return json({ ok: true, rpc: Boolean(env.RPC_URL), db, guard: Boolean(env.SESSION_SECRET), telegram: Boolean(env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_BOT_USERNAME) });
+      // ?telegram=1 also asks Telegram how webhook delivery is going (no token in the answer).
+      let webhook: unknown = undefined;
+      if (url.searchParams.get("telegram") && env.TELEGRAM_BOT_TOKEN) {
+        try {
+          const r: any = await (await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getWebhookInfo`, { signal: AbortSignal.timeout(8000) })).json();
+          const i = r?.result ?? {};
+          webhook = { ok: Boolean(r?.ok), url: i.url ?? null, pending: i.pending_update_count ?? null, lastError: i.last_error_message ?? null, lastErrorAt: i.last_error_date ? new Date(i.last_error_date * 1000).toISOString() : null, allowed: i.allowed_updates ?? null };
+        } catch (e: any) {
+          webhook = { ok: false, error: String(e?.message ?? e) };
+        }
+      }
+      return json({ ok: true, rpc: Boolean(env.RPC_URL), db, guard: Boolean(env.SESSION_SECRET), telegram: Boolean(env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_BOT_USERNAME), webhook });
     }
     if (url.pathname === "/rpc") {
       if (request.method !== "POST") return json({ error: "POST only" }, 405);
