@@ -97,6 +97,12 @@ main{max-width:1160px;margin:0 auto;padding:0 20px 40px}
 .hc-b.go{background:var(--acc);color:var(--acc-ink);border-color:var(--acc)}
 .hc-b.ok{color:var(--good);border-color:rgba(61,220,132,.3);background:rgba(61,220,132,.08)}
 
+/* ---------- three steps ---------- */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:0 0 16px}
+.step{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:22px}
+.step p{color:var(--dim);font-size:14px;margin:0}
+.num{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:var(--acc);color:var(--acc-ink);font:800 16px var(--display);margin:0 0 12px}
+
 /* ---------- fact tiles ---------- */
 .facts{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:8px 0 56px}
 .fact{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px;text-align:center}
@@ -194,11 +200,12 @@ main{max-width:1160px;margin:0 auto;padding:0 20px 40px}
   .hero h1{font-size:38px}
   .lead{font-size:16px}
   .facts{grid-template-columns:1fr 1fr}
-  .fgrid,.pgrid,.two{grid-template-columns:1fr}
+  .fgrid,.pgrid,.two,.steps{grid-template-columns:1fr}
   .fixbar{bottom:0;border-radius:14px 14px 0 0;margin-left:-20px;margin-right:-20px;padding:12px 16px}
   .fixbar p{font-size:13px}
   h2{font-size:24px}
 }
-section[id]{scroll-margin-top:130px}
+/* the sticky nav + search bar is about 130px tall: anything a link jumps to lands below it */
+[id]{scroll-margin-top:150px}
 .listhead{grid-column:1/-1;font-size:18px;margin:14px 0 2px;color:var(--fg)}
 .listhead:first-child{margin-top:0}
