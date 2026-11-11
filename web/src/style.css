@@ -200,3 +200,5 @@ main{max-width:1160px;margin:0 auto;padding:0 20px 40px}
   h2{font-size:24px}
 }
 section[id]{scroll-margin-top:130px}
+.listhead{grid-column:1/-1;font-size:18px;margin:14px 0 2px;color:var(--fg)}
+.listhead:first-child{margin-top:0}

@@ -168,7 +168,14 @@ function renderReport(): void {
   $("#checked").textContent = `Looked at ${r.checked.tokenAccounts} token accounts, ${r.checked.mints} Token-2022 mints, ${r.checked.stakes} stake accounts and ${r.checked.nonces} nonce accounts.` + (r.warnings.length ? ` ${r.warnings.join(" ")}` : "");
 
   const list = $("#findings");
-  list.innerHTML = groupFindings(r.findings).map((g) => (g.length === 1 ? card(r.findings[g[0]], g[0]) : groupCard(r.findings, g))).join("");
+  // What can be fixed here comes first (each part keeps its severity order); notes with nothing to do go below.
+  const groups = groupFindings(r.findings);
+  const fixable = groups.filter((g) => g.some((i) => r.findings[i].action));
+  const notes = groups.filter((g) => !g.some((i) => r.findings[i].action));
+  const render = (g: number[]) => (g.length === 1 ? card(r.findings[g[0]], g[0]) : groupCard(r.findings, g));
+  list.innerHTML =
+    (fixable.length ? `<h3 class="listhead">You can fix these here</h3>${fixable.map(render).join("")}` : "") +
+    (notes.length ? `<h3 class="listhead">For your information, nothing to do</h3>${notes.map(render).join("")}` : "");
   list.querySelectorAll<HTMLInputElement>("input[type=checkbox]").forEach((cb) => cb.addEventListener("change", () => {
     const idx = String(cb.dataset.i).split(",").map(Number);
     for (const i of idx) { if (cb.checked) selected.add(i); else selected.delete(i); }

@@ -298,7 +298,10 @@ export function scan(input: ScanInput, opts: ScanOptions = {}): ScanResult {
           title: `The issuer of ${name} can take it back any time`,
           detail: `This token has a permanent delegate (${shortKey(mint.permanentDelegate)}): that address can transfer or burn it from your wallet without your signature, and nothing can revoke that. ${known ? "Regulated tokens such as tokenised stocks work this way by design; nothing to do unless you don't trust the issuer." : "Some regulated tokens use it legitimately. If you don't trust the issuer, sell or move it out, or burn it."}`,
           accounts: [t.address, t.mint, mint.permanentDelegate],
-          action: { kind: "burnClose", tokenAccount: t.address, mint: t.mint, program: t.program, amount: t.amount },
+          // A token with a market price (PYUSD, tokenised stocks) is worth money: never offer to burn it. Sell or
+          // swap it instead. An unknown one may be offered, but left unticked.
+          action: known ? undefined : { kind: "burnClose", tokenAccount: t.address, mint: t.mint, program: t.program, amount: t.amount },
+          keep: known ? undefined : "Burning destroys these tokens for good. Only do it if you're sure they're worthless to you; otherwise sell or swap them.",
         });
       }
       const odd = mint.extensions.filter((e) => e === "transferHook" || e === "nonTransferable" || (e === "defaultAccountState" && mint.defaultState === "frozen"));

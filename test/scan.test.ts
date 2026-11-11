@@ -41,7 +41,11 @@ describe("scan", () => {
     expect(r.findings.map((f) => [f.check, f.severity])).toEqual([["permanentDelegate", "medium"], ["mintExtensions", "low"]]);
     expect(r.findings[0].action).toMatchObject({ kind: "burnClose", amount: 10n, program: "token2022" });
     const priced = scan(input({ tokenAccounts: [acct({ program: "token2022", amount: 10n })], mints, assets: { mint: asset({ name: "Tesla xStock", symbol: "TSLAx", priced: true }) } }));
-    expect(priced.findings.find((f) => f.check === "permanentDelegate")!.severity).toBe("low");
+    const pd = priced.findings.find((f) => f.check === "permanentDelegate")!;
+    expect(pd.severity).toBe("low");
+    // A token with a market price is never offered for burning.
+    expect(pd.action).toBeUndefined();
+    expect(r.findings[0].keep).toMatch(/Burning destroys/);
   });
 
   it("scores repeated findings of one kind with diminishing weight", () => {
