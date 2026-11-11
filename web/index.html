@@ -40,10 +40,6 @@
     <p class="lead">A free 30-second check-up of your wallet: approvals other addresses still hold, Token-2022 tricks, phishing airdrops, stray nonce and stake authorities, and whether the wallet account itself has been tampered with. Anything that can be fixed, you fix with one signature in your own wallet.</p>
     <div id="connect">
       <div class="ctas"><button id="connectbtn" class="btn primary big">Connect wallet</button><a class="btn ghost big" href="#how">How it works</a></div>
-      <div id="walletpick" class="walletpick" hidden>
-        <p id="walletpickhead" class="small muted">Wallets found in this browser:</p>
-        <div id="wallets" class="wallets"></div>
-      </div>
       <p class="small muted">Connecting only reads your public address. SealGuard never asks for a seed phrase, never holds a key and never signs anything for you.</p>
     </div>
     <div id="session" hidden>
@@ -156,6 +152,13 @@
   </div>
   <p class="small muted disclaimer">SealGuard reads public chain data and gives general information, not financial or security advice. You decide and sign every transaction yourself; SealGuard isn't responsible for what you choose to revoke, burn or close.</p>
 </footer>
+<div id="walletpick" class="modal" hidden>
+  <div class="modalbox" role="dialog" aria-modal="true" aria-labelledby="walletpickhead">
+    <div class="modalhead"><b id="walletpickhead">Wallets found in this browser:</b><button id="pickclose" class="x" type="button" aria-label="Close">×</button></div>
+    <div id="wallets" class="wallets"></div>
+    <p class="small muted">Connecting only reads your public address. SealGuard never asks for a seed phrase, never holds a key and never signs anything for you.</p>
+  </div>
+</div>
 <script type="module" src="/src/polyfill.ts"></script>
 <script type="module" src="/src/main.ts"></script>
 </body>

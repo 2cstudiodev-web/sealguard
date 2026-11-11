@@ -37,7 +37,7 @@ function setStatus(text: string, kind: "" | "busy" | "err" = ""): void {
 function renderWallets(): void {
   const box = $("#wallets");
   const ws = listWallets();
-  $("#walletpickhead").hidden = ws.length === 0;
+  $("#walletpickhead").style.visibility = ws.length === 0 ? "hidden" : "visible";
   if (!ws.length) {
     box.innerHTML = `<p class="muted">No Solana wallet found in this browser. Install Phantom, Solflare or Backpack, or open this page inside your wallet app's browser. On a Seeker, open it in any browser and pick Seed Vault.</p>`;
     return;
@@ -65,18 +65,22 @@ function showSession(): void {
   $("#navconnect").textContent = connected ? shortKey(connected.address) : "Connect wallet";
 }
 
-/** The Connect button in the nav: opens the wallet list in the hero (or, once connected, jumps to the report). */
+/** The Connect button in the nav: opens the wallet list (or, once connected, goes back to the top of the page). */
 function navConnect(): void {
-  window.scrollTo({ top: 0, behavior: "smooth" });
-  if (connected) return;
-  if ($("#connect").hidden) void doDisconnect();
+  if (connected) { window.scrollTo({ top: 0, behavior: "smooth" }); return; }
   openWalletPicker();
+}
+
+/** The wallet list is a dialog in the middle of the screen, whichever Connect button opened it. */
+function closeWalletPicker(): void {
+  $("#walletpick").hidden = true;
 }
 
 async function doConnect(w: import("@wallet-standard/base").Wallet): Promise<void> {
   try {
     setStatus("Waiting for the wallet…", "busy");
     connected = await connect(w);
+    closeWalletPicker();
     address = connected.address;
     showSession();
     setStatus("");
@@ -370,6 +374,9 @@ if (pendingFix) setStatus("Connect the wallet this message was about to see the 
 onWalletsChange(renderWallets);
 $("#connectbtn").addEventListener("click", openWalletPicker);
 $("#navconnect").addEventListener("click", navConnect);
+$("#pickclose").addEventListener("click", closeWalletPicker);
+$("#walletpick").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeWalletPicker(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeWalletPicker(); });
 $("#addrform").addEventListener("submit", doScanAddress);
 $("#scanbtn").addEventListener("click", doScan);
 $("#disconnect").addEventListener("click", doDisconnect);
