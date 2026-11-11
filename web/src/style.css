@@ -43,7 +43,10 @@ h2{font-size:18px;color:var(--acc);margin:30px 0 8px}
 .linkbtn{background:none;border:0;color:var(--acc);padding:0;font-size:13px;cursor:pointer;text-decoration:underline}
 .grouplist{margin:6px 0 0;padding-left:18px;color:var(--dim);max-height:240px;overflow:auto}
 .grouplist li{margin:0 0 2px}
-.fixbar{background:#0f1320;border:1px solid var(--acc);border-radius:12px;padding:12px 16px;margin-top:16px}
+.fixbar{position:sticky;bottom:12px;z-index:20;background:#0f1320;border:1px solid var(--acc);border-radius:12px;padding:12px 16px;margin-top:16px;box-shadow:0 -6px 24px rgba(0,0,0,.55)}
+.fixbar #fixlist{max-height:30vh;overflow:auto}
+.fixbar #fixlog{max-height:20vh;overflow:auto}
+@media (max-width:600px){.fixbar{bottom:0;border-radius:12px 12px 0 0;margin-left:-18px;margin-right:-18px;padding:10px 14px}.fixbar p{font-size:13px}}
 .fixbar .linkbtn{margin:0 0 8px}
 .fixbar p{margin:0 0 6px;font-size:14px;color:var(--dim)}
 .fixbar ul{margin:0 0 8px;padding-left:18px;color:var(--dim)}

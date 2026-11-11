@@ -221,7 +221,7 @@ function renderFixBar(): void {
   list.hidden = true;
   const toggle = $<HTMLButtonElement>("#fixtoggle");
   toggle.hidden = acts.length === 0;
-  toggle.textContent = `Show what will be sent (${acts.length})`;
+  toggle.textContent = `Show what will be sent (${list.children.length})`;
 }
 
 async function doFix(): Promise<void> {
