@@ -26,6 +26,6 @@
     // 2C Studio's treasury wallet (the same one SealDraw and BananaTap collect into).
     "TREASURY": "B3BCTvv1LUpXZ2PpB4HeppxuSsS8Y1GSjYYG6NB6xTUA",
     // The alert bot's @username without the @ (set once the bot exists).
-    "TELEGRAM_BOT_USERNAME": ""
+    "TELEGRAM_BOT_USERNAME": "seal_guard_bot"
   }
 }

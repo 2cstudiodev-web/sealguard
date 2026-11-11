@@ -22,7 +22,11 @@
   <h1>Who can move your Solana tokens?</h1>
   <p class="lead">A free 30-second check-up of your wallet: approvals other addresses still hold, Token-2022 tricks, phishing airdrops, stray nonce and stake authorities, and whether the wallet account itself has been tampered with. Anything that can be fixed, you fix with one signature in your own wallet.</p>
   <div id="connect">
-    <div id="wallets" class="wallets"></div>
+    <button id="connectbtn" class="btn primary">Connect wallet</button>
+    <div id="walletpick" class="walletpick" hidden>
+      <p id="walletpickhead" class="small muted">Wallets found in this browser:</p>
+      <div id="wallets" class="wallets"></div>
+    </div>
     <p class="small muted">Connecting only reads your public address. SealGuard never asks for a seed phrase, never holds a key and never signs anything for you.</p>
     <form id="addrform" class="addrform"><input id="addrinput" type="text" placeholder="…or paste any wallet address to scan it read-only" spellcheck="false" autocomplete="off"><button class="btn small" type="submit">Scan address</button></form>
   </div>
@@ -37,6 +41,7 @@
   <div id="findings" class="findings"></div>
   <div id="fixbar" class="fixbar" hidden>
     <p><b id="fixcount"></b>. Each transaction is simulated first and signed in your wallet; the page never sends anything you didn't tick.</p>
+    <p id="fixfee" class="small"></p>
     <button id="fixtoggle" class="linkbtn" type="button" hidden></button>
     <ul id="fixlist" class="small" hidden></ul>
     <button id="fixbtn" class="btn primary">Fix selected</button>
@@ -75,6 +80,7 @@
     <li>Your browser asks SealGuard's relay for your token accounts, Token-2022 mints, stake and nonce accounts and token names. The relay only forwards read calls to a Solana RPC provider and keeps its API key out of the page.</li>
     <li>The rules run in your browser: approvals, permanent delegates, transfer hooks, frozen accounts, empty accounts, phishing names, stake withdraw authority, durable nonces, and the wallet account's owner.</li>
     <li>Fixes are ordinary Token Program instructions (Revoke, Burn, CloseAccount) and System Program nonce withdrawals, built in your browser, simulated, then signed by your wallet. The code is public, so anyone can read exactly what is sent.</li>
+    <li>Scanning, revoking approvals, burning phishing tokens and withdrawing nonce accounts are free. Closing empty token accounts carries a 5% fee on the rent they return: it's one extra transfer in the same transaction, shown in your wallet before you sign.</li>
   </ol>
 </section>
 </main>

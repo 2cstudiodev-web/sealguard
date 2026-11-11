@@ -2,8 +2,8 @@ import "./polyfill";
 import { Buffer } from "buffer";
 import { PublicKey } from "@solana/web3.js";
 import { fetchScanInput, rpc } from "./rpc";
-import { scan, shortKey, solWithUsd, type Action, type Finding, type ScanResult, type Severity } from "./scan";
-import { batchActions, buildTransaction, describeAction } from "./tx";
+import { CLOSE_FEE_PERCENT, closeFee, scan, shortKey, solWithUsd, type Action, type Finding, type ScanResult, type Severity } from "./scan";
+import { batchActions, buildTransaction, describeAction, describeFee, groupFee } from "./tx";
 import { connect, disconnect, listWallets, onWalletsChange, registerMobile, signAndSend, type Connected } from "./wallet";
 import { setGuardWallet } from "./guard";
 
@@ -26,12 +26,24 @@ function setStatus(text: string, kind: "" | "busy" | "err" = ""): void {
 function renderWallets(): void {
   const box = $("#wallets");
   const ws = listWallets();
+  $("#walletpickhead").hidden = ws.length === 0;
   if (!ws.length) {
     box.innerHTML = `<p class="muted">No Solana wallet found in this browser. Install Phantom, Solflare or Backpack, or open this page inside your wallet app's browser. On a Seeker, open it in any browser and pick Seed Vault.</p>`;
     return;
   }
   box.innerHTML = ws.map((w, i) => `<button class="wbtn" data-i="${i}"><img src="${esc(w.icon)}" alt="" width="22" height="22"> ${esc(w.name)}</button>`).join("");
   box.querySelectorAll<HTMLButtonElement>(".wbtn").forEach((b) => b.addEventListener("click", () => doConnect(ws[Number(b.dataset.i)])));
+}
+
+/**
+ * The Connect button: with one wallet in the browser (or Seed Vault on a Seeker) it connects straight away;
+ * with several it opens the list of the ones it found; with none it explains what to install.
+ */
+function openWalletPicker(): void {
+  const ws = listWallets();
+  if (ws.length === 1) { void doConnect(ws[0]); return; }
+  renderWallets();
+  $("#walletpick").hidden = false;
 }
 
 function showSession(): void {
@@ -80,6 +92,7 @@ async function doDisconnect(): Promise<void> {
   $("#session").hidden = true;
   $("#report").hidden = true;
   $("#connect").hidden = false;
+  $("#walletpick").hidden = true;
   setStatus("");
 }
 
@@ -116,7 +129,7 @@ function renderReport(): void {
     : "Nothing to flag. Nobody but you can move your tokens, no phishing tokens, no stray nonce or stake authorities.";
   const reclaim = $("#reclaim");
   reclaim.hidden = r.reclaim.accounts === 0;
-  reclaim.textContent = r.reclaim.accounts ? `You can get ${solWithUsd(r.reclaim.lamports, r.solPriceUsd)} back by closing ${r.reclaim.accounts} empty token account${r.reclaim.accounts === 1 ? "" : "s"}.` : "";
+  reclaim.textContent = r.reclaim.accounts ? `You can get ${solWithUsd(r.reclaim.net, r.solPriceUsd)} back by closing ${r.reclaim.accounts} empty token account${r.reclaim.accounts === 1 ? "" : "s"} (${solWithUsd(r.reclaim.lamports, null)} of rent, less SealGuard's ${CLOSE_FEE_PERCENT}% fee).` : "";
   $("#checked").textContent = `Looked at ${r.checked.tokenAccounts} token accounts, ${r.checked.mints} Token-2022 mints, ${r.checked.stakes} stake accounts and ${r.checked.nonces} nonce accounts.` + (r.warnings.length ? ` ${r.warnings.join(" ")}` : "");
 
   const list = $("#findings");
@@ -155,7 +168,7 @@ function groupFindings(fs: Finding[]): number[][] {
 
 const GROUP_TITLE: Record<string, (n: number) => string> = {
   frozen: (n) => `${n} of your token accounts are frozen by their issuers`,
-  empty: (n) => `${n} empty token accounts: ${solWithUsd(n * 2_039_280, result?.solPriceUsd)} to get back`,
+  empty: (n) => `${n} empty token accounts: ${solWithUsd(result ? result.reclaim.net : 0, result?.solPriceUsd)} back to you`,
   permanentDelegate: (n) => `${n} tokens whose issuer can take them back`,
   closeAuthority: (n) => `${n} token accounts someone else may close once empty`,
   delegate: (n) => `${n} approvals on your token accounts`,
@@ -201,7 +214,10 @@ function renderFixBar(): void {
   // The full list is there for anyone who wants to read every instruction, but folded: sixteen "close empty
   // account" lines pushed the button off the screen.
   const list = $("#fixlist");
-  list.innerHTML = acts.map((a) => `<li>${esc(describeAction(a))}</li>`).join("");
+  const fee = batchActions(acts).reduce((sum, g) => sum + groupFee(g), 0);
+  list.innerHTML = acts.map((a) => `<li>${esc(describeAction(a))}</li>`).join("") + (fee ? `<li>${esc(describeFee(fee))}</li>` : "");
+  const closing = acts.filter((a) => a.kind === "close").reduce((sum, a) => sum + (a.kind === "close" ? a.lamports : 0), 0);
+  $("#fixfee").textContent = closing ? `Closing empty accounts returns ${solWithUsd(closing - closeFee(closing), result?.solPriceUsd ?? null)} to you after SealGuard's ${CLOSE_FEE_PERCENT}% fee (${solWithUsd(closeFee(closing), result?.solPriceUsd ?? null)}). Revoking and burning are free.` : "All selected fixes are free.";
   list.hidden = true;
   const toggle = $<HTMLButtonElement>("#fixtoggle");
   toggle.hidden = acts.length === 0;
@@ -239,8 +255,8 @@ async function doFix(): Promise<void> {
 }
 
 registerMobile();
-renderWallets();
 onWalletsChange(renderWallets);
+$("#connectbtn").addEventListener("click", openWalletPicker);
 $("#addrform").addEventListener("submit", doScanAddress);
 $("#scanbtn").addEventListener("click", doScan);
 $("#disconnect").addEventListener("click", doDisconnect);

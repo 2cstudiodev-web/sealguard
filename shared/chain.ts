@@ -45,6 +45,7 @@ function parseTokenAccounts(list: any[], program: "token" | "token2022"): TokenA
       closeAuthority: info.closeAuthority ?? null,
       frozen: info.state === "frozen",
       isNative: Boolean(info.isNative),
+      lamports: typeof x.account?.lamports === "number" ? x.account.lamports : undefined,
     };
   });
 }

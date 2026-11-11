@@ -17,6 +17,8 @@ export type TokenAcct = {
   frozen: boolean;
   /** Wrapped SOL account: closing it returns the SOL itself, not just rent. */
   isNative: boolean;
+  /** The account's balance in lamports: the rent deposit closing it returns (Token-2022 accounts with extensions hold more). */
+  lamports?: number;
 };
 
 export type MintInfo = {
@@ -77,7 +79,7 @@ export type CheckId =
 
 export type Action =
   | { kind: "revoke"; tokenAccount: string; mint: string; program: TokenProgram }
-  | { kind: "close"; tokenAccount: string; mint: string; program: TokenProgram }
+  | { kind: "close"; tokenAccount: string; mint: string; program: TokenProgram; lamports: number }
   | { kind: "burnClose"; tokenAccount: string; mint: string; program: TokenProgram; amount: bigint }
   | { kind: "withdrawNonce"; nonceAccount: string; lamports: number };
 
@@ -100,8 +102,8 @@ export type ScanResult = {
   /** Plain-language summary of what was looked at, so "nothing found" still shows something was checked. */
   checked: { tokenAccounts: number; mints: number; stakes: number; nonces: number };
   warnings: string[];
-  /** Rent that closing every empty account would return, and its USD value when the SOL price is known. */
-  reclaim: { accounts: number; lamports: number; usd: number | null };
+  /** Rent that closing every empty account would return, SealGuard's fee on it, and what the owner keeps. */
+  reclaim: { accounts: number; lamports: number; fee: number; net: number; usd: number | null };
   solPriceUsd: number | null;
 };
 
@@ -138,6 +140,15 @@ export function scorePenalty(findings: Finding[]): number {
 
 /** The lamports a token account's rent deposit is worth (0.00203928 SOL for a 165-byte account). */
 export const TOKEN_ACCOUNT_RENT_LAMPORTS = 2_039_280;
+
+/** SealGuard's fee on rent returned by closing empty accounts, in basis points (500 = 5%). Revoking, burning and nonce withdrawals are free. */
+export const CLOSE_FEE_BPS = 500;
+export const CLOSE_FEE_PERCENT = CLOSE_FEE_BPS / 100;
+
+/** The fee on `lamports` of returned rent, rounded down. */
+export function closeFee(lamports: number): number {
+  return Math.floor((lamports * CLOSE_FEE_BPS) / 10_000);
+}
 
 const URL_RE = /(https?:\/\/|www\.|\b[a-z0-9-]+\.(com|io|xyz|app|net|org|fi|gg|co|site|link|me|lol|wtf|fun)\b|t\.me\/)/i;
 const BAIT_RE = /\b(claim|reward|rewards|airdrop|air-drop|bonus|voucher|prize|redeem|winner|allowlist|whitelist)\b|🎁/i;
@@ -297,9 +308,9 @@ export function scan(input: ScanInput): ScanResult {
       f.push({
         check: "empty", severity: "ok",
         title: t.isNative ? "Empty wrapped-SOL account" : `Empty ${name} account`,
-        detail: `Nothing in it. Closing it returns the ${solWithUsd(TOKEN_ACCOUNT_RENT_LAMPORTS, solPrice)} deposit to you.`,
+        detail: `Nothing in it. Closing it returns its ${solWithUsd(t.lamports ?? TOKEN_ACCOUNT_RENT_LAMPORTS, solPrice)} rent deposit to you, less SealGuard's ${CLOSE_FEE_PERCENT}% fee.`,
         accounts: [t.address],
-        action: { kind: "close", tokenAccount: t.address, mint: t.mint, program: t.program },
+        action: { kind: "close", tokenAccount: t.address, mint: t.mint, program: t.program, lamports: t.lamports ?? TOKEN_ACCOUNT_RENT_LAMPORTS },
       });
     }
 
@@ -355,12 +366,14 @@ export function scan(input: ScanInput): ScanResult {
   const counts: Record<Severity, number> = { critical: 0, high: 0, medium: 0, low: 0, ok: 0 };
   for (const x of f) counts[x.severity]++;
   const emptyCount = f.filter((x) => x.check === "empty").length;
+  const emptyLamports = f.reduce((sum, x) => sum + (x.action?.kind === "close" ? x.action.lamports : 0), 0);
+  const emptyFee = closeFee(emptyLamports);
   const score = Math.max(0, 100 - scorePenalty(f));
   return {
     score, findings: f, counts,
     checked: { tokenAccounts: tokenAccounts.length, mints: Object.keys(mints).length, stakes: input.stakes.length, nonces: input.nonces.length },
     warnings: input.warnings ?? [],
-    reclaim: { accounts: emptyCount, lamports: emptyCount * TOKEN_ACCOUNT_RENT_LAMPORTS, usd: solPrice ? ((emptyCount * TOKEN_ACCOUNT_RENT_LAMPORTS) / 1e9) * solPrice : null },
+    reclaim: { accounts: emptyCount, lamports: emptyLamports, fee: emptyFee, net: emptyLamports - emptyFee, usd: solPrice ? ((emptyLamports - emptyFee) / 1e9) * solPrice : null },
     solPriceUsd: solPrice,
   };
 }

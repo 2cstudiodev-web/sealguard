@@ -22,7 +22,8 @@ describe("USD next to amounts", () => {
       tokenAccounts: [acct({ address: "a" }), acct({ address: "b" }), acct({ address: "c", amount: 50_000_000n, delegate: OTHER, delegatedAmount: 12_500_000n })],
       assets: { mint: { mint: "mint", name: "USD Coin", symbol: "USDC", description: "", jsonUri: "", kind: "FungibleToken", priced: true, priceUsd: 1 } },
     }));
-    expect(r.reclaim).toEqual({ accounts: 2, lamports: 2 * TOKEN_ACCOUNT_RENT_LAMPORTS, usd: (2 * TOKEN_ACCOUNT_RENT_LAMPORTS / 1e9) * 170 });
+    const gross = 2 * TOKEN_ACCOUNT_RENT_LAMPORTS, fee = Math.floor(gross * 0.05);
+    expect(r.reclaim).toEqual({ accounts: 2, lamports: gross, fee, net: gross - fee, usd: ((gross - fee) / 1e9) * 170 });
     expect(r.findings.find((f) => f.check === "delegate")!.detail).toContain("12.5 USDC (≈ US$12.50)");
     expect(r.findings.find((f) => f.check === "empty")!.detail).toContain("(≈ US$0.35)");
   });
@@ -30,7 +31,8 @@ describe("USD next to amounts", () => {
   it("leaves amounts in SOL when there is no price", () => {
     const r = scan(input({ tokenAccounts: [acct({})] }));
     expect(r.reclaim.usd).toBeNull();
-    expect(r.findings[0].detail).toContain("0.00203928 SOL deposit");
+    expect(r.findings[0].detail).toContain("0.00203928 SOL rent deposit");
+    expect(r.findings[0].detail).toContain("5% fee");
     expect(r.findings[0].detail).not.toContain("US$");
   });
 });

@@ -1,7 +1,10 @@
 // Turning findings' actions into transactions. The wallet signs them; SealGuard never holds a key.
 import { PublicKey, SystemProgram, Transaction, TransactionInstruction } from "@solana/web3.js";
 import { createBurnInstruction, createCloseAccountInstruction, createRevokeInstruction, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
-import type { Action, TokenProgram } from "./scan";
+import { CLOSE_FEE_PERCENT, closeFee, type Action, type TokenProgram } from "./scan";
+
+/** 2C Studio's treasury, where the close fee goes (the same wallet the guard subscription is paid to). */
+export const TREASURY = new PublicKey("B3BCTvv1LUpXZ2PpB4HeppxuSsS8Y1GSjYYG6NB6xTUA");
 
 /** Actions per transaction. Revoke/close are tiny; burn+close is two instructions. 10 keeps every mix well under the size limit. */
 export const MAX_ACTIONS_PER_TX = 10;
@@ -34,10 +37,26 @@ export function instructionsFor(a: Action, owner: PublicKey): TransactionInstruc
   }
 }
 
-export function buildTransaction(group: Action[], owner: PublicKey, recentBlockhash: string, lastValidBlockHeight: number): Transaction {
+/** The fee for the empty-account closes in a group: 5% of the rent they return. Other actions are free. */
+export function groupFee(group: Action[]): number {
+  return closeFee(group.reduce((sum, a) => sum + (a.kind === "close" ? a.lamports : 0), 0));
+}
+
+/**
+ * The group's instructions, then (when it closes empty accounts) one transfer of the fee to the treasury. The
+ * transfer comes last, so it's paid out of the rent the closes just returned; the wallet shows it before signing.
+ */
+export function buildTransaction(group: Action[], owner: PublicKey, recentBlockhash: string, lastValidBlockHeight: number, treasury: PublicKey = TREASURY): Transaction {
   const tx = new Transaction({ feePayer: owner, blockhash: recentBlockhash, lastValidBlockHeight });
   for (const a of group) tx.add(...instructionsFor(a, owner));
+  const fee = groupFee(group);
+  if (fee > 0) tx.add(SystemProgram.transfer({ fromPubkey: owner, toPubkey: treasury, lamports: fee }));
   return tx;
+}
+
+/** The line shown for the fee in the "what will be sent" list. */
+export function describeFee(lamports: number): string {
+  return `Send SealGuard's ${CLOSE_FEE_PERCENT}% fee on the returned rent (${(lamports / 1e9).toFixed(9).replace(/0+$/, "")} SOL) to 2C Studio's wallet ${TREASURY.toBase58()}`;
 }
 
 /** One line per action for the "what you're about to sign" list. */
