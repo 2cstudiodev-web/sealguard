@@ -168,6 +168,28 @@
     <p class="small muted">Connecting only reads your public address. SealGuard never asks for a seed phrase, never holds a key and never signs anything for you.</p>
   </div>
 </div>
+<div id="upsell" class="modal" hidden>
+  <div class="modalbox wide" role="dialog" aria-modal="true" aria-labelledby="upsellhead">
+    <div class="modalhead"><b id="upsellhead">Before you fix: add the guard?</b><button id="upclose" class="x" type="button" aria-label="Close">×</button></div>
+    <p id="upsave" class="upsave" hidden></p>
+    <table class="cmp">
+      <thead><tr><th></th><th>Free</th><th class="g">Guard</th></tr></thead>
+      <tbody>
+        <tr><td>Scan, revoke approvals, burn phishing tokens</td><td>✓</td><td class="g">✓</td></tr>
+        <tr><td>Fee on closing empty accounts</td><td>5%</td><td class="g">None</td></tr>
+        <tr><td>Hourly watch with Telegram alerts</td><td class="no">–</td><td class="g">✓</td></tr>
+        <tr><td>A fix-it link with every alert</td><td class="no">–</td><td class="g">✓</td></tr>
+        <tr><td>Weekly all-clear and monthly reminder of rent to claim back</td><td class="no">–</td><td class="g">✓</td></tr>
+        <tr><td>Price</td><td>US$0</td><td class="g" id="upprice">US$49 a year</td></tr>
+      </tbody>
+    </table>
+    <div class="upbtns">
+      <button id="uppay" class="btn primary" type="button">Pay US$49 for a year</button>
+      <button id="upskip" class="btn ghost" type="button">No thanks, fix now</button>
+    </div>
+    <p class="small muted">Paid once in USDC, SOL or SKR from this wallet. It doesn't renew by itself.</p>
+  </div>
+</div>
 <script type="module" src="/src/polyfill.ts"></script>
 <script type="module" src="/src/main.ts"></script>
 </body>

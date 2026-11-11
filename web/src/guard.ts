@@ -28,6 +28,20 @@ let lastMember = false;
 export function isGuardMember(): boolean {
   return Boolean(connected && token && status?.active && status.wallet === connected.address);
 }
+/** True when this deployment offers the guard to the connected wallet (the card is on screen). */
+export function guardOffered(): boolean {
+  return Boolean(connected && guardAvailable);
+}
+/** The yearly price to show: the server's figure once signed in, otherwise the default. */
+export function guardPriceUsd(): number {
+  return status?.priceUsd ?? DEFAULT_PRICE_USD;
+}
+/** From the upsell: bring the guard card into view, sign in if needed, then open the payment choices. */
+export async function buyGuard(): Promise<void> {
+  $("#guard").scrollIntoView({ behavior: "smooth", block: "start" });
+  if (!token || !status) await signIn();
+  if (token && status && !status.active) await startPayment();
+}
 /** Sign out: forget this browser's SealGuard sign-in (the wallet itself is disconnected by main.ts). */
 export function forgetGuardSession(): void {
   if (connected) saveToken(connected.address, null);

@@ -5,7 +5,7 @@ import { fetchScanInput, rpc } from "./rpc";
 import { CLOSE_FEE_BPS, closeFee, scan, shortKey, solWithUsd, type Action, type Finding, type ScanInput, type ScanResult, type Severity } from "./scan";
 import { buildTransaction, describeAction, describeFee, groupFee, packActions, TXS_PER_APPROVAL } from "./tx";
 import { connect, disconnect, listWallets, onWalletsChange, registerMobile, signAndSendMany, type Connected } from "./wallet";
-import { forgetGuardSession, isGuardMember, onGuardChange, setGuardWallet } from "./guard";
+import { buyGuard, forgetGuardSession, guardOffered, guardPriceUsd, isGuardMember, onGuardChange, setGuardWallet } from "./guard";
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector(sel) as T;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
@@ -319,6 +319,33 @@ function syncFixButton(): void {
   $("#fixbtn").toggleAttribute("disabled", needsAck);
 }
 
+// Offer the guard once per visit when a wallet without it presses Fix: the comparison, how much this fix's
+// fee would be, then "Pay" (goes to the guard card) or "No thanks" (carries on with the fix).
+let upsellShown = false;
+function onFixClick(): void {
+  if (!upsellShown && connected && result && !isGuardMember() && guardOffered()) {
+    upsellShown = true;
+    openUpsell();
+    return;
+  }
+  void doFix();
+}
+function openUpsell(): void {
+  const acts = [...selected].map((i) => result!.findings[i].action!).filter(Boolean);
+  const closing = acts.reduce((sum, a) => sum + (a.kind === "close" ? a.lamports : 0), 0);
+  const fee = closeFee(closing, CLOSE_FEE_BPS);
+  const save = $("#upsave");
+  save.hidden = !fee;
+  save.textContent = fee ? `This fix has a ${CLOSE_FEE_BPS / 100}% fee of ${solWithUsd(fee, result?.solPriceUsd ?? null)}. With the guard it's free, today and for the rest of the year.` : "";
+  const price = `US$${guardPriceUsd()}`;
+  $("#upprice").textContent = `${price} a year`;
+  $("#uppay").textContent = `Pay ${price} for a year`;
+  $("#upsell").hidden = false;
+}
+function closeUpsell(): void {
+  $("#upsell").hidden = true;
+}
+
 async function doFix(): Promise<void> {
   if (!connected || !result) return;
   const actions = [...selected].sort((a, b) => a - b).map((i) => result!.findings[i].action!).filter(Boolean);
@@ -385,13 +412,17 @@ onWalletsChange(renderWallets);
 $("#navconnect").addEventListener("click", navConnect);
 $("#pickclose").addEventListener("click", closeWalletPicker);
 $("#walletpick").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeWalletPicker(); });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeWalletPicker(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeWalletPicker(); closeUpsell(); } });
 $("#addrform").addEventListener("submit", doScanAddress);
 $("#scanbtn").addEventListener("click", doScan);
 $("#disconnect").addEventListener("click", doDisconnect);
 $("#navscan").addEventListener("click", () => { $("#navmenu").hidden = true; void doScan(); });
 document.addEventListener("click", (e) => { if (!$("#navmenu").hidden && !(e.target as HTMLElement).closest(".navacct")) $("#navmenu").hidden = true; });
-$("#fixbtn").addEventListener("click", doFix);
+$("#fixbtn").addEventListener("click", onFixClick);
+$("#upclose").addEventListener("click", closeUpsell);
+$("#upsell").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeUpsell(); });
+$("#upskip").addEventListener("click", () => { closeUpsell(); void doFix(); });
+$("#uppay").addEventListener("click", () => { closeUpsell(); void buyGuard(); });
 $("#burnack").addEventListener("change", syncFixButton);
 $("#fixtoggle").addEventListener("click", () => {
   const list = $("#fixlist");

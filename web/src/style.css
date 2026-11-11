@@ -10,6 +10,8 @@
   --body:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
 }
 *{box-sizing:border-box}
+/* `hidden` always wins: several elements set display:flex/grid, which otherwise overrides the attribute. */
+[hidden]{display:none!important}
 html{scroll-behavior:smooth}
 body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 var(--body);-webkit-font-smoothing:antialiased}
 a{color:var(--acc);text-decoration:none}
@@ -68,6 +70,19 @@ main{max-width:1160px;margin:0 auto;padding:0 20px 40px}
 .wallets{display:grid;gap:10px;margin:0}
 .wbtn{display:flex;align-items:center;gap:12px;width:100%;background:var(--panel2);border:1px solid var(--line2);color:var(--fg);padding:12px 16px;border-radius:12px;font:600 15px var(--body);cursor:pointer;text-align:left}
 .wbtn img{width:28px;height:28px}
+.modalbox.wide{max-width:520px}
+.modalbox{max-height:calc(100dvh - 32px);overflow-y:auto}
+@media (max-width:560px){.modal{padding:12px}.cmp{font-size:13px}.cmp th,.cmp td{padding:7px 4px}.cmp td:not(:first-child),.cmp th:not(:first-child){padding-left:8px}.upsave{font-size:13px}}
+.upsave{background:var(--acc-soft);border:1px solid rgba(20,241,149,.25);border-radius:12px;padding:10px 14px;color:var(--fg);font-size:14px}
+.cmp{width:100%;border-collapse:collapse;margin:14px 0 4px;font-size:14px}
+.cmp th,.cmp td{padding:9px 8px;border-top:1px solid var(--line);text-align:center}
+.cmp th{font:600 14px var(--display);border-top:0}
+.cmp td:first-child,.cmp th:first-child{text-align:left;color:var(--dim)}
+.cmp .g{color:var(--acc);font-weight:600}
+.cmp .no{color:var(--faint)}
+.cmp td:not(:first-child),.cmp th:not(:first-child){white-space:nowrap;width:1%;padding-left:14px}
+.upbtns{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0 0}
+.upbtns .btn{flex:1 1 180px}
 .wbtn:hover{border-color:var(--acc)}
 .wbtn img{border-radius:6px}
 .addr{margin:0 0 10px;color:var(--dim)}
