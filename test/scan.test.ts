@@ -60,6 +60,18 @@ describe("scan", () => {
     expect(r.score).toBe(100);
   });
 
+  it("gives known soulbound tokens (Seeker Genesis Token) one calm note instead of warnings", () => {
+    const SGT = "8fcgPVhFCtFLtyCDc2FSfgxeUHbSwvtMLzD3QrDXqYfs";
+    const r = scan(input({
+      tokenAccounts: [acct({ mint: SGT, program: "token2022", amount: 1n, decimals: 0, frozen: true })],
+      mints: { [SGT]: { mint: SGT, extensions: ["permanentDelegate", "nonTransferable"], permanentDelegate: OTHER, defaultState: "frozen" } },
+    }));
+    expect(r.findings).toHaveLength(1);
+    expect(r.findings[0]).toMatchObject({ severity: "ok", title: "Seeker Genesis Token: locked to your wallet by design" });
+    expect(r.findings[0].action).toBeUndefined();
+    expect(r.score).toBe(100);
+  });
+
   it("notes frozen holdings as low", () => {
     const r = scan(input({ tokenAccounts: [acct({ amount: 5n, frozen: true })] }));
     expect(r.findings[0]).toMatchObject({ check: "frozen", severity: "low" });

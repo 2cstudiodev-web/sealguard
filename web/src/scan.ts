@@ -101,6 +101,16 @@ export type ScanResult = {
 const PENALTY: Record<Severity, number> = { critical: 100, high: 25, medium: 10, low: 2, ok: 0 };
 
 /**
+ * Tokens that are soulbound on purpose (permanent delegate, non-transferable, frozen) by an issuer everyone on a
+ * Seeker knows. Flagging them would tell every Seeker owner their phone's own token is suspicious, so they get one
+ * calm note instead of three warnings. Keyed by mint.
+ */
+export const KNOWN_SOULBOUND: Record<string, { name: string; note: string }> = {
+  "8fcgPVhFCtFLtyCDc2FSfgxeUHbSwvtMLzD3QrDXqYfs": { name: "Seeker Genesis Token", note: "Solana Mobile's proof that this wallet belongs to a Seeker phone. It can't be sold or moved, is frozen on purpose, and Solana Mobile keeps the right to revoke it. That's how it's meant to work." },
+  "2DMMamkkxQ6zDMBtkFp8KH7FoWzBMBA1CGTYwom4QH6Z": { name: "Chapter 2 Preorder Token", note: "Solana Mobile's Seeker preorder receipt. Non-transferable by design, and Solana Mobile can retire it once it's been redeemed. Nothing to do." },
+};
+
+/**
  * Points off for the findings. Ten approvals are worse than one, but not ten times worse, so within one check
  * the first finding counts in full and each further one a quarter, up to twice the single penalty.
  */
@@ -172,9 +182,20 @@ export function scan(input: ScanInput): ScanResult {
     });
   }
 
+  const noted = new Set<string>();
   for (const t of tokenAccounts) {
     const name = assetName(t.mint, assets);
     const mint = mints[t.mint];
+
+    // Known soulbound tokens: one note, no warnings (and still offered for closing if empty, below).
+    const known = KNOWN_SOULBOUND[t.mint];
+    if (known && t.amount > 0n) {
+      if (!noted.has(t.mint)) {
+        noted.add(t.mint);
+        f.push({ check: "mintExtensions", severity: "ok", title: `${known.name}: locked to your wallet by design`, detail: known.note, accounts: [t.address, t.mint] });
+      }
+      continue;
+    }
 
     // 2. Delegates: someone else may transfer or burn up to delegatedAmount from this account.
     if (t.delegate) {
