@@ -5,6 +5,7 @@ const TOKEN = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 const TOKEN_2022 = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
 const STAKE = "Stake11111111111111111111111111111111111111";
 const SYSTEM = "11111111111111111111111111111111";
+const WSOL = "So11111111111111111111111111111111111111112";
 
 export class RpcError extends Error {
   constructor(message: string, public code?: number) { super(message); }
@@ -59,6 +60,7 @@ function parseAsset(a: any): AssetMeta {
     jsonUri: String(a.content?.json_uri ?? ""),
     kind: String(a.interface ?? ""),
     priced: Boolean(a.token_info?.price_info?.price_per_token),
+    priceUsd: typeof a.token_info?.price_info?.price_per_token === "number" ? a.token_info.price_info.price_per_token : null,
   };
 }
 
@@ -128,6 +130,16 @@ export async function fetchScanInput(wallet: string, onProgress: Progress = () =
     dasFailed = true;
   }
 
+  // The SOL price, for the "≈ US$" next to rent and stake amounts (the DAS feed prices wrapped SOL).
+  let solPriceUsd: number | null = null;
+  try {
+    const sol = await rpc<any>("getAsset", { id: WSOL });
+    const p = sol?.token_info?.price_info?.price_per_token;
+    if (typeof p === "number" && p > 0) solPriceUsd = p;
+  } catch {
+    // No price feed: amounts show in SOL only.
+  }
+
   const warnings: string[] = [];
   if (dasFailed) warnings.push("Token names couldn't be read, so the phishing check only saw what the token accounts themselves say.");
   onProgress("Checking stake accounts");
@@ -160,5 +172,5 @@ export async function fetchScanInput(wallet: string, onProgress: Progress = () =
     warnings.push(`Nonce accounts couldn't be checked (${e?.message || e}).`);
   }
 
-  return { wallet, walletOwner, tokenAccounts, mints, assets, stakes, nonces, warnings };
+  return { wallet, walletOwner, tokenAccounts, mints, assets, stakes, nonces, warnings, solPriceUsd };
 }

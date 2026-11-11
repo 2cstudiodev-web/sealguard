@@ -2,7 +2,7 @@ import "./polyfill";
 import { Buffer } from "buffer";
 import { PublicKey } from "@solana/web3.js";
 import { fetchScanInput, rpc } from "./rpc";
-import { scan, shortKey, type Action, type Finding, type ScanResult, type Severity } from "./scan";
+import { scan, shortKey, solWithUsd, type Action, type Finding, type ScanResult, type Severity } from "./scan";
 import { batchActions, buildTransaction, describeAction } from "./tx";
 import { connect, disconnect, listWallets, onWalletsChange, registerMobile, signAndSend, type Connected } from "./wallet";
 
@@ -110,6 +110,9 @@ function renderReport(): void {
   $("#summary").textContent = r.findings.length
     ? `${r.findings.length} finding${r.findings.length > 1 ? "s" : ""}: ${parts.join(", ")}.`
     : "Nothing to flag. Nobody but you can move your tokens, no phishing tokens, no stray nonce or stake authorities.";
+  const reclaim = $("#reclaim");
+  reclaim.hidden = r.reclaim.accounts === 0;
+  reclaim.textContent = r.reclaim.accounts ? `You can get ${solWithUsd(r.reclaim.lamports, r.solPriceUsd)} back by closing ${r.reclaim.accounts} empty token account${r.reclaim.accounts === 1 ? "" : "s"}.` : "";
   $("#checked").textContent = `Looked at ${r.checked.tokenAccounts} token accounts, ${r.checked.mints} Token-2022 mints, ${r.checked.stakes} stake accounts and ${r.checked.nonces} nonce accounts.` + (r.warnings.length ? ` ${r.warnings.join(" ")}` : "");
 
   const list = $("#findings");
@@ -148,7 +151,7 @@ function groupFindings(fs: Finding[]): number[][] {
 
 const GROUP_TITLE: Record<string, (n: number) => string> = {
   frozen: (n) => `${n} of your token accounts are frozen by their issuers`,
-  empty: (n) => `${n} empty token accounts`,
+  empty: (n) => `${n} empty token accounts: ${solWithUsd(n * 2_039_280, result?.solPriceUsd)} to get back`,
   permanentDelegate: (n) => `${n} tokens whose issuer can take them back`,
   closeAuthority: (n) => `${n} token accounts someone else may close once empty`,
   delegate: (n) => `${n} approvals on your token accounts`,

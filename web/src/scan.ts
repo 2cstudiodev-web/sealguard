@@ -39,6 +39,8 @@ export type AssetMeta = {
   kind: string;
   /** Known on a price feed (DAS token_info.price_info present): a token with a market is not a phishing bait. */
   priced: boolean;
+  /** USD per whole token from the price feed, when there is one. */
+  priceUsd?: number | null;
 };
 
 export type StakeAcct = { address: string; staker: string; withdrawer: string; lamports: number };
@@ -55,6 +57,8 @@ export type ScanInput = {
   nonces: NonceAcct[];
   /** Checks that couldn't run (provider limits); shown so "nothing found" isn't mistaken for "all checked". */
   warnings?: string[];
+  /** USD per SOL from the price feed, for the "≈ US$" next to every amount. */
+  solPriceUsd?: number | null;
 };
 
 export type Severity = "critical" | "high" | "medium" | "low" | "ok";
@@ -96,6 +100,9 @@ export type ScanResult = {
   /** Plain-language summary of what was looked at, so "nothing found" still shows something was checked. */
   checked: { tokenAccounts: number; mints: number; stakes: number; nonces: number };
   warnings: string[];
+  /** Rent that closing every empty account would return, and its USD value when the SOL price is known. */
+  reclaim: { accounts: number; lamports: number; usd: number | null };
+  solPriceUsd: number | null;
 };
 
 const PENALTY: Record<Severity, number> = { critical: 100, high: 25, medium: 10, low: 2, ok: 0 };
@@ -153,6 +160,24 @@ export function shortKey(k: string): string {
   return k.length > 12 ? `${k.slice(0, 4)}…${k.slice(-4)}` : k;
 }
 
+/** "≈ US$5.60"; "" when the price isn't known. Small values keep two decimals, cents keep three. */
+export function formatUsd(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "";
+  if (value >= 100) return `≈ US$${Math.round(value).toLocaleString("en-US")}`;
+  if (value >= 0.01) return `≈ US$${value.toFixed(2)}`;
+  if (value > 0) return `≈ US$${value.toFixed(3)}`;
+  return "";
+}
+
+/** "0.0326 SOL (≈ US$5.60)" or just the SOL without a price. */
+export function solWithUsd(lamports: number | bigint, solPriceUsd: number | null | undefined): string {
+  const sol = Number(lamports) / 1e9;
+  const usd = solPriceUsd ? formatUsd(sol * solPriceUsd) : "";
+  const digits = sol >= 1 ? 3 : sol >= 0.01 ? 4 : 8;
+  const solText = sol.toFixed(digits).replace(/(\.\d*?[1-9])0+$/, "$1").replace(/\.0+$/, "");
+  return `${solText} SOL${usd ? ` (${usd})` : ""}`;
+}
+
 export function formatAmount(amount: bigint, decimals: number): string {
   if (decimals === 0) return amount.toString();
   const s = amount.toString().padStart(decimals + 1, "0");
@@ -170,6 +195,14 @@ function assetName(mint: string, assets: Record<string, AssetMeta>): string {
 export function scan(input: ScanInput): ScanResult {
   const f: Finding[] = [];
   const { wallet, tokenAccounts, mints, assets } = input;
+  const solPrice = input.solPriceUsd ?? null;
+  /** "12.5 USDC (≈ US$12.50)" for a token amount, when the feed prices it. */
+  const tokenWithUsd = (amount: bigint, t: TokenAcct): string => {
+    const a = assets[t.mint];
+    const text = `${formatAmount(amount, t.decimals)} ${a?.symbol || ""}`.trim();
+    const usd = a?.priceUsd ? formatUsd((Number(amount) / 10 ** t.decimals) * a.priceUsd) : "";
+    return usd ? `${text} (${usd})` : text;
+  };
 
   // 1. The wallet account itself. An attacker who got a signature can reassign the account's owner to a program;
   //    after that the System Program can't move its SOL and every future signature is worthless.
@@ -204,7 +237,7 @@ export function scan(input: ScanInput): ScanResult {
         check: "delegate", severity: live ? "high" : "low",
         title: live ? `${shortKey(t.delegate)} can spend your ${name}` : `Stale approval on ${name}`,
         detail: live
-          ? `An approval lets ${shortKey(t.delegate)} move up to ${formatAmount(t.delegatedAmount, t.decimals)} ${assets[t.mint]?.symbol || ""} without asking you again. If you don't know why it's there, revoke it.`
+          ? `An approval lets ${shortKey(t.delegate)} move up to ${tokenWithUsd(t.delegatedAmount, t)} without asking you again. If you don't know why it's there, revoke it.`
           : `An approval for ${shortKey(t.delegate)} is still recorded but there is nothing it could take right now. Revoking it keeps things tidy.`,
         accounts: [t.address, t.delegate],
         action: { kind: "revoke", tokenAccount: t.address, mint: t.mint, program: t.program },
@@ -264,7 +297,7 @@ export function scan(input: ScanInput): ScanResult {
       f.push({
         check: "empty", severity: "ok",
         title: t.isNative ? "Empty wrapped-SOL account" : `Empty ${name} account`,
-        detail: `Nothing in it. Closing it returns the ${formatAmount(BigInt(TOKEN_ACCOUNT_RENT_LAMPORTS), 9)} SOL deposit to you.`,
+        detail: `Nothing in it. Closing it returns the ${solWithUsd(TOKEN_ACCOUNT_RENT_LAMPORTS, solPrice)} deposit to you.`,
         accounts: [t.address],
         action: { kind: "close", tokenAccount: t.address, mint: t.mint, program: t.program },
       });
@@ -293,7 +326,7 @@ export function scan(input: ScanInput): ScanResult {
       f.push({
         check: "stake", severity: "high",
         title: `Someone else can withdraw your stake account ${shortKey(s.address)}`,
-        detail: `You can stake and unstake it, but ${shortKey(s.withdrawer)} holds the withdraw authority: they, not you, can take the ${formatAmount(BigInt(s.lamports), 9)} SOL out. If you didn't set this up on purpose, move the withdraw authority back to yourself in your wallet or staking app.`,
+        detail: `You can stake and unstake it, but ${shortKey(s.withdrawer)} holds the withdraw authority: they, not you, can take the ${solWithUsd(s.lamports, solPrice)} out. If you didn't set this up on purpose, move the withdraw authority back to yourself in your wallet or staking app.`,
         accounts: [s.address, s.withdrawer],
       });
     } else if (s.withdrawer === wallet && s.staker !== wallet) {
@@ -311,7 +344,7 @@ export function scan(input: ScanInput): ScanResult {
     f.push({
       check: "nonce", severity: "medium",
       title: `A durable nonce account is tied to your wallet (${shortKey(n.address)})`,
-      detail: `Nonce accounts let a transaction be signed now and sent much later. Developers use them on purpose; drainers use them to replay a transfer after you think you're safe. If you didn't create it, withdraw it, which also takes back its ${formatAmount(BigInt(n.lamports), 9)} SOL.`,
+      detail: `Nonce accounts let a transaction be signed now and sent much later. Developers use them on purpose; drainers use them to replay a transfer after you think you're safe. If you didn't create it, withdraw it, which also takes back its ${solWithUsd(n.lamports, solPrice)}.`,
       accounts: [n.address],
       action: { kind: "withdrawNonce", nonceAccount: n.address, lamports: n.lamports },
     });
@@ -321,10 +354,13 @@ export function scan(input: ScanInput): ScanResult {
   f.sort((x, y) => order.indexOf(x.severity) - order.indexOf(y.severity));
   const counts: Record<Severity, number> = { critical: 0, high: 0, medium: 0, low: 0, ok: 0 };
   for (const x of f) counts[x.severity]++;
+  const emptyCount = f.filter((x) => x.check === "empty").length;
   const score = Math.max(0, 100 - scorePenalty(f));
   return {
     score, findings: f, counts,
     checked: { tokenAccounts: tokenAccounts.length, mints: Object.keys(mints).length, stakes: input.stakes.length, nonces: input.nonces.length },
     warnings: input.warnings ?? [],
+    reclaim: { accounts: emptyCount, lamports: emptyCount * TOKEN_ACCOUNT_RENT_LAMPORTS, usd: solPrice ? ((emptyCount * TOKEN_ACCOUNT_RENT_LAMPORTS) / 1e9) * solPrice : null },
+    solPriceUsd: solPrice,
   };
 }

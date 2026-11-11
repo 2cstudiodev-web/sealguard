@@ -28,6 +28,7 @@ h2{font-size:18px;color:var(--acc);margin:30px 0 8px}
 .score{font-size:44px;font-weight:900;min-width:84px;text-align:center;border-radius:12px;padding:6px 0}
 .score.good{color:var(--good)} .score.meh{color:var(--meh)} .score.bad{color:var(--bad)}
 .summary{margin:0 0 4px;font-weight:600}
+.reclaim{margin:0 0 4px;color:var(--good);font-size:14px}
 .findings{display:grid;gap:12px}
 .card{background:var(--panel);border:1px solid var(--line);border-left-width:5px;border-radius:12px;padding:12px 16px}
 .card h3{margin:2px 0 6px;font-size:16px}

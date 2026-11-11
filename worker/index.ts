@@ -9,7 +9,7 @@ export interface Env {
 /** Methods the page may call. Reads, a simulation, and sending a transaction the wallet already signed. */
 const METHODS = new Set([
   "getAccountInfo", "getBalance", "getTokenAccountsByOwner", "getMultipleAccounts", "getProgramAccounts", "getProgramAccountsV2",
-  "getAssetsByOwner", "getLatestBlockhash", "simulateTransaction", "sendTransaction", "getSignatureStatuses",
+  "getAssetsByOwner", "getAsset", "getLatestBlockhash", "simulateTransaction", "sendTransaction", "getSignatureStatuses",
 ]);
 /** getProgramAccounts is only allowed against these programs (stake and system accounts), and only with filters. */
 const GPA_PROGRAMS = new Set(["Stake11111111111111111111111111111111111111", "11111111111111111111111111111111"]);
