@@ -191,7 +191,14 @@ function renderFixBar(): void {
   bar.hidden = n === 0;
   $("#fixcount").textContent = `${n} action${n === 1 ? "" : "s"} selected`;
   const acts = [...selected].map((i) => result!.findings[i].action!).filter(Boolean);
-  $("#fixlist").innerHTML = acts.map((a) => `<li>${esc(describeAction(a))}</li>`).join("");
+  // The full list is there for anyone who wants to read every instruction, but folded: sixteen "close empty
+  // account" lines pushed the button off the screen.
+  const list = $("#fixlist");
+  list.innerHTML = acts.map((a) => `<li>${esc(describeAction(a))}</li>`).join("");
+  list.hidden = true;
+  const toggle = $<HTMLButtonElement>("#fixtoggle");
+  toggle.hidden = acts.length === 0;
+  toggle.textContent = `Show what will be sent (${acts.length})`;
 }
 
 async function doFix(): Promise<void> {
@@ -231,3 +238,8 @@ $("#addrform").addEventListener("submit", doScanAddress);
 $("#scanbtn").addEventListener("click", doScan);
 $("#disconnect").addEventListener("click", doDisconnect);
 $("#fixbtn").addEventListener("click", doFix);
+$("#fixtoggle").addEventListener("click", () => {
+  const list = $("#fixlist");
+  list.hidden = !list.hidden;
+  $("#fixtoggle").textContent = list.hidden ? `Show what will be sent (${list.children.length})` : "Hide the list";
+});
