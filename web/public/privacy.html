@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy · SealGuard</title>
+<meta name="description" content="What SealGuard stores when you scan a wallet or set up the guard, and how to have it deleted.">
+<link rel="canonical" href="https://guard.2cstudio.app/privacy">
+<link rel="icon" href="/logo.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<style>
+  :root{--bg:#0b0d14;--panel:#141826;--line:#232a3d;--fg:#f2f4f8;--dim:#8d95a8;--acc:#14f195}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  main{max-width:760px;margin:0 auto;padding:0 18px 48px}
+  .top{display:flex;justify-content:space-between;align-items:center;max-width:760px;margin:0 auto;padding:16px 18px;font-size:14px}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:800;font-size:18px;color:var(--fg);text-decoration:none}
+  a{color:var(--acc)}
+  h1{font-size:28px;margin:18px 0 6px}
+  h2{font-size:18px;color:var(--acc);margin:28px 0 8px}
+  p{color:var(--dim);margin:0 0 12px}
+  .muted{color:var(--dim);font-size:14px}
+  footer{max-width:760px;margin:20px auto 0;padding:18px;border-top:1px solid var(--line);font-size:13px;color:var(--dim);text-align:center}
+</style>
+</head>
+<body>
+<header class="top"><a class="brand" href="/"><img src="/mark.svg" alt="" width="28" height="28"> SealGuard</a><span class="muted">by <a href="https://2cstudio.app">2C Studio</a></span></header>
+<main>
+<h1>Privacy</h1>
+<p class="muted">Last updated 11 November 2026. Questions: support@2cstudio.app.</p>
+
+<h2>Scanning</h2>
+<p>When you scan a wallet, its public address is sent to our server and on to our Solana data provider (Helius) to read the chain. We don't keep a record of which addresses were scanned.</p>
+
+<h2>Signing in and the guard</h2>
+<p>If you sign in to set up the guard, we store your wallet address, your Telegram chat id once you link it, a summary of the wallet's last check (approvals, nonce and stake authorities, flagged tokens), and your payments (transaction signature, token, amount, date). We use them only to run the guard and keep payment records. Your browser keeps a sign-in token in local storage; there are no tracking cookies.</p>
+
+<h2>Logs</h2>
+<p>Cloudflare, which hosts SealGuard, keeps standard request logs for a short time. We don't sell or share data with anyone else.</p>
+
+<h2>Deleting your data</h2>
+<p>Write to support@2cstudio.app from any address with your wallet address, and sign a message we send you to prove it's your wallet; we'll delete the guard record. Payment records are kept as long as the law requires.</p>
+</main>
+<footer><a href="/">SealGuard</a> · <a href="/terms">Terms</a> · <a href="https://github.com/2cstudiodev-web/sealguard">Source code (MIT)</a> · <a href="https://2cstudio.app">2C Studio</a></footer>
+</body>
+</html>

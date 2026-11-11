@@ -7,6 +7,10 @@ import { base58, signAndSend, type Connected } from "./wallet";
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector(sel) as T;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
 const TOKEN_KEY = "sg_session";
+/** The guard's yearly price as shown before sign-in; after sign-in the server's figure is used. */
+const DEFAULT_PRICE_USD = 49;
+/** "US$49" for whole dollars, "US$4.99" otherwise. */
+const usd = (n: number) => `US$${Number.isInteger(n) ? n : n.toFixed(2)}`;
 
 type Status = { wallet: string | null; active: boolean; paidUntil: number | null; telegramLinked: boolean; botUsername: string | null; lastCheckAt: number | null; checks: number; alerts: number; priceUsd: number };
 type Quote = { token: string; display: string; baseUnits: string };
@@ -70,7 +74,7 @@ function render(): void {
   const box = $("#gbody");
   if (!connected) return;
   if (!token || !status) {
-    box.innerHTML = `<p>Get a Telegram message within the hour when something in this wallet changes for the worse: a new approval, a nonce account, a changed stake authority, a phishing airdrop, or the wallet account itself being taken over. <b>US$4.99 a year</b>, paid in USDC, SOL or SKR from this wallet.</p>
+    box.innerHTML = `<p>Get a Telegram message within the hour when something in this wallet changes for the worse: a new approval, a nonce account, a changed stake authority, a phishing airdrop, or the wallet account itself being taken over. <b>${usd(DEFAULT_PRICE_USD)} a year</b>, paid in USDC, SOL or SKR from this wallet.</p>
 <p class="small muted">Signing in is a signature on a short message, not a transaction: it moves nothing and costs nothing.</p>
 <button id="gsignin" class="btn primary">Sign in to set it up</button>`;
     $("#gsignin").addEventListener("click", signIn);
@@ -81,7 +85,7 @@ function render(): void {
   if (s.active) {
     lines.push(`<p class="okline">✅ Guard active until <b>${new Date(s.paidUntil!).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</b>. ${s.checks ? `Checked ${s.checks} time${s.checks === 1 ? "" : "s"}, ${s.alerts} alert${s.alerts === 1 ? "" : "s"} sent.` : "First check within the hour."}</p>`);
   } else {
-    lines.push(`<p>Get a Telegram message within the hour when something in this wallet changes for the worse. <b>US$${s.priceUsd.toFixed(2)} a year</b>, paid in USDC, SOL or SKR from this wallet.</p>`);
+    lines.push(`<p>Get a Telegram message within the hour when something in this wallet changes for the worse. <b>${usd(s.priceUsd)} a year</b>, paid in USDC, SOL or SKR from this wallet.</p>`);
   }
   if (s.telegramLinked) {
     lines.push(`<p>📨 Telegram linked. <button id="gunlink" class="linkbtn">Unlink</button></p>`);
@@ -90,8 +94,8 @@ function render(): void {
   } else {
     lines.push(`<p class="small muted">Telegram alerts aren't switched on for this deployment yet.</p>`);
   }
-  if (!s.active) lines.push(`<p>Step 2: <button id="gpay" class="btn primary small"${s.telegramLinked ? "" : " disabled"}>Pay US$${s.priceUsd.toFixed(2)} for a year</button></p><div id="gquotes"></div>`);
-  else lines.push(`<p><button id="gpay" class="btn small">Extend by a year (US$${s.priceUsd.toFixed(2)})</button></p><div id="gquotes"></div>`);
+  if (!s.active) lines.push(`<p>Step 2: <button id="gpay" class="btn primary small"${s.telegramLinked ? "" : " disabled"}>Pay ${usd(s.priceUsd)} for a year</button></p><div id="gquotes"></div>`);
+  else lines.push(`<p><button id="gpay" class="btn small">Extend by a year (${usd(s.priceUsd)})</button></p><div id="gquotes"></div>`);
   lines.push(`<p class="small muted">Alerts go only to your Telegram. SealGuard stores the wallet address, the chat id and a summary of the last check; nothing else.</p>`);
   box.innerHTML = lines.join("");
   $("#glink")?.addEventListener("click", linkTelegram);

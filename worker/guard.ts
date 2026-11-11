@@ -180,7 +180,45 @@ export async function handleApi(request: Request, env: GuardEnv, path: string, n
   }
 }
 
-/** The cron: make sure the webhook is set, then re-scan the guards whose turn it is. */
+const DAY_MS = 86_400_000;
+export const REMIND_BEFORE_MS = 7 * DAY_MS;
+const shortWallet = (w: string) => `${w.slice(0, 4)}…${w.slice(-4)}`;
+const dayText = (ms: number) => new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+const priceText = () => `US$${Number.isInteger(GUARD_USD) ? GUARD_USD : GUARD_USD.toFixed(2)}`;
+
+export function reminderText(wallet: string, paidUntil: number): string {
+  return `⏰ Your SealGuard guard for wallet <code>${esc(shortWallet(wallet))}</code> ends on ${dayText(paidUntil)}. To keep the alerts coming, renew for another year (${priceText()}) at https://guard.2cstudio.app/: sign in with the same wallet and press Extend by a year.`;
+}
+
+export function endedText(wallet: string): string {
+  return `Your SealGuard guard for wallet <code>${esc(shortWallet(wallet))}</code> ended today, so alerts have stopped. You can renew any time at https://guard.2cstudio.app/.`;
+}
+
+/** One reminder a week before the guard ends and one note when it has ended, each once per paid period. */
+export async function sendRenewalNotices(env: GuardEnv, now: number, fetchFn: typeof fetch = (i, o) => fetch(i, o)): Promise<{ reminded: number; ended: number }> {
+  if (!env.TELEGRAM_BOT_TOKEN) return { reminded: 0, ended: 0 };
+  let reminded = 0, ended = 0;
+  const soon = (await env.DB.prepare("SELECT wallet, paid_until, telegram_chat_id FROM guards WHERE telegram_chat_id IS NOT NULL AND paid_until > ? AND paid_until <= ? AND (reminded_until IS NULL OR reminded_until <> paid_until) LIMIT 50")
+    .bind(now, now + REMIND_BEFORE_MS).all<{ wallet: string; paid_until: number; telegram_chat_id: string }>()).results;
+  for (const g of soon) {
+    if (await sendTelegram(env.TELEGRAM_BOT_TOKEN, g.telegram_chat_id, reminderText(g.wallet, g.paid_until), fetchFn)) {
+      await env.DB.prepare("UPDATE guards SET reminded_until = ? WHERE wallet = ?").bind(g.paid_until, g.wallet).run();
+      reminded++;
+    }
+  }
+  // Only guards that ended in the last three days: older ones were told already, or ended before this existed.
+  const gone = (await env.DB.prepare("SELECT wallet, paid_until, telegram_chat_id FROM guards WHERE telegram_chat_id IS NOT NULL AND paid_until <= ? AND paid_until > ? AND (ended_notice_until IS NULL OR ended_notice_until <> paid_until) LIMIT 50")
+    .bind(now, now - 3 * DAY_MS).all<{ wallet: string; paid_until: number; telegram_chat_id: string }>()).results;
+  for (const g of gone) {
+    if (await sendTelegram(env.TELEGRAM_BOT_TOKEN, g.telegram_chat_id, endedText(g.wallet), fetchFn)) {
+      await env.DB.prepare("UPDATE guards SET ended_notice_until = ? WHERE wallet = ?").bind(g.paid_until, g.wallet).run();
+      ended++;
+    }
+  }
+  return { reminded, ended };
+}
+
+/** The cron: make sure the webhook is set, send renewal notices, then re-scan the guards whose turn it is. */
 export async function runGuards(env: GuardEnv, now: number, fetchFn: typeof fetch = (i, o) => fetch(i, o)): Promise<{ checked: number; alerted: number }> {
   if (env.TELEGRAM_BOT_TOKEN && env.PUBLIC_URL) {
     const want = webhookSecret(env.TELEGRAM_BOT_TOKEN) + "@" + env.PUBLIC_URL;
@@ -189,6 +227,7 @@ export async function runGuards(env: GuardEnv, now: number, fetchFn: typeof fetc
       await env.DB.prepare("INSERT INTO meta (k, v) VALUES ('webhook', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v").bind(want).run();
     }
   }
+  try { await sendRenewalNotices(env, now, fetchFn); } catch (e) { console.error("renewal notices", e); }
   const due = (await env.DB.prepare("SELECT * FROM guards WHERE paid_until > ? AND telegram_chat_id IS NOT NULL AND (last_check_at IS NULL OR last_check_at < ?) ORDER BY last_check_at ASC LIMIT ?")
     .bind(now, now - CHECK_INTERVAL_MS, CHECKS_PER_RUN).all<GuardRow>()).results;
   const rpc = rpcOver(env.RPC_URL, 25_000, fetchFn);

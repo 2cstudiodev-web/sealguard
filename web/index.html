@@ -42,10 +42,11 @@
   <div class="scorebox"><div id="score" class="score">–</div><div><p id="summary" class="summary"></p><p id="reclaim" class="reclaim" hidden></p><p id="checked" class="small muted"></p></div></div>
   <div id="findings" class="findings"></div>
   <div id="fixbar" class="fixbar" hidden>
-    <p><b id="fixcount"></b>. Each transaction is simulated first and signed in your wallet; the page never sends anything you didn't tick.</p>
+    <p><b id="fixcount"></b>. SealGuard never moves anything by itself. Each fix is a transaction your wallet shows you and you sign; nothing is sent without that signature.</p>
     <p id="fixfee" class="small"></p>
     <button id="fixtoggle" class="linkbtn" type="button" hidden></button>
     <ul id="fixlist" class="small" hidden></ul>
+    <label id="burnackrow" class="burnack" hidden><input id="burnack" type="checkbox"> I understand that burning destroys these tokens for good, and that SealGuard can't undo it or give them back.</label>
     <button id="fixbtn" class="btn primary">Fix selected</button>
     <ul id="fixlog" class="small"></ul>
   </div>
@@ -88,7 +89,7 @@
 </section>
 </main>
 
-<footer><a href="https://github.com/2cstudiodev-web/sealguard">Source code (MIT)</a> · <a href="https://sealdraw.2cstudio.app">SealDraw</a> · <a href="https://2cstudio.app">2C Studio</a> · support@2cstudio.app<br><span class="small muted">SealGuard reads public chain data and gives general information, not financial or security advice. Use at your own risk.</span></footer>
+<footer><a href="https://github.com/2cstudiodev-web/sealguard">Source code (MIT)</a> · <a href="https://sealdraw.2cstudio.app">SealDraw</a> · <a href="https://2cstudio.app">2C Studio</a> · support@2cstudio.app<br><span class="small muted">SealGuard reads public chain data and gives general information, not financial or security advice. You decide and sign every transaction yourself; SealGuard isn't responsible for what you choose to revoke, burn or close. <a href="/terms">Terms</a> · <a href="/privacy">Privacy</a></span></footer>
 <script type="module" src="/src/polyfill.ts"></script>
 <script type="module" src="/src/main.ts"></script>
 </body>

@@ -9,7 +9,7 @@ export const MEMO_PROGRAM = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
 export type PayToken = "USDC" | "SOL" | "SKR";
 export const PAY_TOKENS: PayToken[] = ["USDC", "SOL", "SKR"];
 export const TOKEN_DECIMALS: Record<PayToken, number> = { USDC: 6, SOL: 9, SKR: 6 };
-export const GUARD_USD = 4.99;
+export const GUARD_USD = 49;
 export const GUARD_DAYS = 365;
 /** A quote's price is good for this long; the payment may land a little later. */
 export const QUOTE_TTL_MS = 15 * 60 * 1000;

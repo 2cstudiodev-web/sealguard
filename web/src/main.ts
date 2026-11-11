@@ -219,9 +219,19 @@ function renderFixBar(): void {
   const closing = acts.filter((a) => a.kind === "close").reduce((sum, a) => sum + (a.kind === "close" ? a.lamports : 0), 0);
   $("#fixfee").textContent = closing ? `Closing empty accounts returns ${solWithUsd(closing - closeFee(closing), result?.solPriceUsd ?? null)} to you after SealGuard's ${CLOSE_FEE_PERCENT}% fee (${solWithUsd(closeFee(closing), result?.solPriceUsd ?? null)}). Revoking and burning are free.` : "All selected fixes are free.";
   list.hidden = true;
+  const burning = acts.some((a) => a.kind === "burnClose");
+  $("#burnackrow").hidden = !burning;
+  if (!burning) $<HTMLInputElement>("#burnack").checked = false;
+  syncFixButton();
   const toggle = $<HTMLButtonElement>("#fixtoggle");
   toggle.hidden = acts.length === 0;
   toggle.textContent = `Show what will be sent (${list.children.length})`;
+}
+
+/** Fix stays off while a burn is selected and not acknowledged. */
+function syncFixButton(): void {
+  const needsAck = !$("#burnackrow").hidden && !$<HTMLInputElement>("#burnack").checked;
+  $("#fixbtn").toggleAttribute("disabled", needsAck);
 }
 
 async function doFix(): Promise<void> {
@@ -250,7 +260,7 @@ async function doFix(): Promise<void> {
   } catch (e: any) {
     setStatus(e?.message || "Something went wrong; nothing more was sent.", "err");
   } finally {
-    $("#fixbtn").toggleAttribute("disabled", false);
+    syncFixButton();
   }
 }
 
@@ -261,6 +271,7 @@ $("#addrform").addEventListener("submit", doScanAddress);
 $("#scanbtn").addEventListener("click", doScan);
 $("#disconnect").addEventListener("click", doDisconnect);
 $("#fixbtn").addEventListener("click", doFix);
+$("#burnack").addEventListener("change", syncFixButton);
 $("#fixtoggle").addEventListener("click", () => {
   const list = $("#fixlist");
   list.hidden = !list.hidden;

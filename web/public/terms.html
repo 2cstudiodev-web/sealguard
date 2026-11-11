@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terms of use · SealGuard</title>
+<meta name="description" content="SealGuard's terms of use: what the scan is, who signs the transactions, the fees, the guard and its limits.">
+<link rel="canonical" href="https://guard.2cstudio.app/terms">
+<link rel="icon" href="/logo.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<style>
+  :root{--bg:#0b0d14;--panel:#141826;--line:#232a3d;--fg:#f2f4f8;--dim:#8d95a8;--acc:#14f195}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  main{max-width:760px;margin:0 auto;padding:0 18px 48px}
+  .top{display:flex;justify-content:space-between;align-items:center;max-width:760px;margin:0 auto;padding:16px 18px;font-size:14px}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:800;font-size:18px;color:var(--fg);text-decoration:none}
+  a{color:var(--acc)}
+  h1{font-size:28px;margin:18px 0 6px}
+  h2{font-size:18px;color:var(--acc);margin:28px 0 8px}
+  p{color:var(--dim);margin:0 0 12px}
+  .muted{color:var(--dim);font-size:14px}
+  footer{max-width:760px;margin:20px auto 0;padding:18px;border-top:1px solid var(--line);font-size:13px;color:var(--dim);text-align:center}
+</style>
+</head>
+<body>
+<header class="top"><a class="brand" href="/"><img src="/mark.svg" alt="" width="28" height="28"> SealGuard</a><span class="muted">by <a href="https://2cstudio.app">2C Studio</a></span></header>
+<main>
+<h1>Terms of use</h1>
+<p class="muted">Last updated 11 November 2026. SealGuard is made by 2C Studio, Malaysia. Questions: support@2cstudio.app.</p>
+
+<h2>What SealGuard is</h2>
+<p>SealGuard reads public Solana data about a wallet and points out approvals, token restrictions, phishing airdrops, stake and nonce authorities and empty accounts. It is general information, not financial, legal or security advice, and it can be wrong or incomplete: no scan finds everything.</p>
+
+<h2>You stay in control</h2>
+<p>SealGuard never asks for a seed phrase or private key and never holds one. It cannot send a transaction from your wallet. Every fix is a transaction your wallet shows you and you sign. Read it before you sign: revoking, burning and closing accounts can't be undone, and burnt tokens are gone for good. SealGuard isn't responsible for losses from transactions you sign, including tokens you choose to burn, or from what other sites, apps or tokens do.</p>
+
+<h2>Fees</h2>
+<p>Scanning, revoking approvals, burning phishing tokens and withdrawing nonce accounts are free. Closing empty token accounts carries a 5% fee on the rent they return, paid in the same transaction and shown in your wallet before you sign. Network fees are paid to Solana, not to us.</p>
+
+<h2>The guard</h2>
+<p>The guard costs US$49 a year for one wallet, paid in USDC, SOL or SKR to 2C Studio's wallet. It doesn't renew by itself: we message your linked Telegram a week before it ends, and you can extend it from the same wallet. It re-checks the wallet about once an hour and messages your linked Telegram when something changes for the worse. It's a best-effort alert, not protection: it can't stop a transaction, alerts can be late or missed (for example if Telegram or our data provider is down), and it can't see thefts that are a single signed transfer. If the guard can't run for your wallet because of a fault on our side, write to us and we'll refund the unused part.</p>
+
+<h2>Liability</h2>
+<p>SealGuard is provided as is. To the extent the law allows, 2C Studio's total liability to you is limited to the fees you paid us in the 12 months before the claim. These terms are governed by the laws of Malaysia.</p>
+</main>
+<footer><a href="/">SealGuard</a> · <a href="/privacy">Privacy</a> · <a href="https://github.com/2cstudiodev-web/sealguard">Source code (MIT)</a> · <a href="https://2cstudio.app">2C Studio</a></footer>
+</body>
+</html>

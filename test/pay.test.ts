@@ -25,13 +25,14 @@ function usdcTx(amount: string): ParsedTx {
 }
 
 describe("pay", () => {
-  it("quotes US$4.99 in USDC, SOL and SKR, rounding up", () => {
+  it("quotes US$49 in USDC, SOL and SKR, rounding up", () => {
+    expect(GUARD_USD).toBe(49);
     const q = buildQuotes(GUARD_USD, { [WSOL_MINT]: 83.2, [SKR_MINT]: 0.0123 });
-    expect(q.find((x) => x.token === "USDC")).toEqual({ token: "USDC", display: "4.99", baseUnits: "4990000" });
+    expect(q.find((x) => x.token === "USDC")).toEqual({ token: "USDC", display: "49.00", baseUnits: "49000000" });
     const sol = q.find((x) => x.token === "SOL")!;
-    expect(Number(sol.display)).toBeGreaterThanOrEqual(4.99 / 83.2);
-    expect(sol.baseUnits).toBe(String(Math.ceil((4.99 / 83.2) * 10_000) * 100_000));
-    expect(q.find((x) => x.token === "SKR")).toEqual({ token: "SKR", display: "406", baseUnits: "406000000" });
+    expect(Number(sol.display)).toBeGreaterThanOrEqual(49 / 83.2);
+    expect(sol.baseUnits).toBe(String(Math.ceil((49 / 83.2) * 10_000) * 100_000));
+    expect(q.find((x) => x.token === "SKR")).toEqual({ token: "SKR", display: "3984", baseUnits: "3984000000" });
     expect(buildQuotes(GUARD_USD, {}).map((x) => x.token)).toEqual(["USDC"]);
   });
 

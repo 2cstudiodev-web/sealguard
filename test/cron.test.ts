@@ -20,6 +20,7 @@ function fakeDb(rows: any[]) {
         return null;
       },
       all: async () => {
+        if (sql.includes("reminded_until") || sql.includes("ended_notice_until")) return { results: [] };
         if (sql.includes("FROM guards")) {
           const [now, cutoff, limit] = args;
           return { results: rows.filter((r) => r.paid_until > now && r.telegram_chat_id && (r.last_check_at == null || r.last_check_at < cutoff)).slice(0, limit) };
