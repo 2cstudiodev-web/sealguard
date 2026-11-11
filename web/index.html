@@ -14,29 +14,60 @@
 <link rel="icon" href="/icon-192.png" type="image/png" sizes="192x192">
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/src/style.css">
 <script src="https://pulse.2cstudio.app/v1/web.js" data-site="web-sealguard" defer></script>
 </head>
 <body>
-<header class="top"><a class="brand" href="/"><img src="/mark.svg" alt="" width="28" height="28"> SealGuard</a><span class="muted">by <a href="https://2cstudio.app">2C Studio</a></span></header>
+<header class="nav">
+  <div class="navin">
+    <a class="brand" href="/"><img src="/mark.svg" alt="" width="30" height="30"><span>SealGuard</span></a>
+    <nav class="links"><a href="#how">How it works</a><a href="#plans">Guard</a><a href="#hardware">Hardware wallets</a></nav>
+    <button id="navconnect" class="btn white">Connect wallet</button>
+  </div>
+  <div class="searchin">
+    <form id="addrform" class="search"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M20 20l-3.5-3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><input id="addrinput" type="text" placeholder="Scan any Solana wallet address, read-only" spellcheck="false" autocomplete="off"><button class="btn small" type="submit">Scan</button></form>
+  </div>
+</header>
 
 <main>
 <section class="hero">
-  <h1>Who can move your Solana tokens?</h1>
-  <p class="lead">A free 30-second check-up of your wallet: approvals other addresses still hold, Token-2022 tricks, phishing airdrops, stray nonce and stake authorities, and whether the wallet account itself has been tampered with. Anything that can be fixed, you fix with one signature in your own wallet.</p>
-  <div id="connect">
-    <button id="connectbtn" class="btn primary">Connect wallet</button>
-    <div id="walletpick" class="walletpick" hidden>
-      <p id="walletpickhead" class="small muted">Wallets found in this browser:</p>
-      <div id="wallets" class="wallets"></div>
+  <div class="herotext">
+    <p class="kicker">Free Solana wallet check-up</p>
+    <h1>Who can move your <span class="hl">Solana tokens?</span></h1>
+    <p class="lead">A free 30-second check-up of your wallet: approvals other addresses still hold, Token-2022 tricks, phishing airdrops, stray nonce and stake authorities, and whether the wallet account itself has been tampered with. Anything that can be fixed, you fix with one signature in your own wallet.</p>
+    <div id="connect">
+      <div class="ctas"><button id="connectbtn" class="btn primary big">Connect wallet</button><a class="btn ghost big" href="#how">How it works</a></div>
+      <div id="walletpick" class="walletpick" hidden>
+        <p id="walletpickhead" class="small muted">Wallets found in this browser:</p>
+        <div id="wallets" class="wallets"></div>
+      </div>
+      <p class="small muted">Connecting only reads your public address. SealGuard never asks for a seed phrase, never holds a key and never signs anything for you.</p>
     </div>
-    <p class="small muted">Connecting only reads your public address. SealGuard never asks for a seed phrase, never holds a key and never signs anything for you.</p>
-    <form id="addrform" class="addrform"><input id="addrinput" type="text" placeholder="…or paste any wallet address to scan it read-only" spellcheck="false" autocomplete="off"><button class="btn small" type="submit">Scan address</button></form>
+    <div id="session" hidden>
+      <p class="addr">Wallet <code id="addr"></code> <span id="mode" class="small muted"></span></p>
+      <div class="ctas"><button id="scanbtn" class="btn small">Scan again</button><button id="disconnect" class="btn ghost small">Close</button></div>
+    </div>
+    <p id="status" class="status"></p>
   </div>
-  <div id="session" hidden>
-    <p class="addr">Wallet <code id="addr"></code> <span id="mode" class="small muted"></span> <button id="scanbtn" class="btn small">Scan again</button> <button id="disconnect" class="btn ghost small">Close</button></p>
+
+  <div class="herocard" aria-hidden="true">
+    <div class="hc-head"><b>Wallet check-up</b><span class="chip"><i class="dot"></i>Solana</span></div>
+    <div class="hc-score"><div class="ring"><span>95</span></div><div><b>Looks good</b><span>2 things to fix, 0.0325 SOL to claim back</span></div></div>
+    <div class="hc-row"><span class="tk usdc">$</span><span class="hc-t">USDC<small>Approval to 9xQe…VFin</small></span><span class="hc-b">Revoke</span></div>
+    <div class="hc-row"><span class="tk warn">!</span><span class="hc-t">jupfinally.com Airdrop<small>Phishing token</small></span><span class="hc-b">Burn</span></div>
+    <div class="hc-row"><span class="tk sol">◎</span><span class="hc-t">16 empty accounts<small>0.0325 SOL rent</small></span><span class="hc-b go">Claim</span></div>
+    <div class="hc-row"><span class="tk seek">S</span><span class="hc-t">Seeker Genesis Token<small>Locked by design</small></span><span class="hc-b ok">OK</span></div>
   </div>
-  <p id="status" class="status"></p>
+</section>
+
+<section class="facts">
+  <div class="fact"><b>Free</b><span>Scan, revoke and burn</span></div>
+  <div class="fact"><b>9</b><span>Checks, approvals to takeover</span></div>
+  <div class="fact"><b>0</b><span>Keys we hold or ask for</span></div>
+  <div class="fact"><b>MIT</b><span>Open source on GitHub</span></div>
 </section>
 
 <section id="report" hidden>
@@ -60,29 +91,54 @@
   <p id="gstatus" class="status"></p>
 </section>
 
-<section class="plans">
-  <h2>Free, or with the guard</h2>
-  <div class="tablewrap"><table class="plantable">
-    <tr><th></th><th>Free</th><th>Guard · US$49 a year</th></tr>
-    <tr><td>Scan, revoke approvals, burn phishing tokens</td><td>✓</td><td>✓</td></tr>
-    <tr><td>Close empty accounts</td><td>5% fee</td><td>No fee</td></tr>
-    <tr><td>Hourly watch with Telegram alerts</td><td>–</td><td>✓</td></tr>
-    <tr><td>A fix-it link with every alert</td><td>–</td><td>✓</td></tr>
-    <tr><td>Weekly all-clear and a monthly reminder of rent to claim back</td><td>–</td><td>✓</td></tr>
-  </table></div>
-  <p class="small muted">The guard covers one wallet and doesn't renew by itself; Telegram reminds you a week before it ends.</p>
+<section class="features">
+  <h2 class="center">Built for Solana wallets</h2>
+  <div class="fgrid">
+    <div class="feat"><span class="ficon">⛔</span><h3>Revoke old approvals</h3><p>See every address that can still spend your tokens and take that right back in one signature.</p></div>
+    <div class="feat"><span class="ficon">🔥</span><h3>Burn phishing airdrops</h3><p>Tokens named after a website or a "reward" are bait. Burn them before anyone clicks the link.</p></div>
+    <div class="feat"><span class="ficon">◎</span><h3>Get your SOL back</h3><p>Every empty token account holds a deposit. Close the ones you don't need and the SOL returns to you.</p></div>
+    <div class="feat"><span class="ficon">🛡</span><h3>Know when something changes</h3><p>With the guard, a Telegram message tells you within the hour, with a link to fix it.</p></div>
+  </div>
 </section>
 
-<section class="limits">
-  <h2>What this can't see</h2>
-  <ul>
-    <li>Most Solana thefts are one signature on a transfer, not a standing approval. SealGuard can't stop you signing on another site. Read your wallet's simulation before every signature, and keep large amounts on a hardware wallet.</li>
-    <li>It reads the chain, not your computer: malware on your device is outside what it can check.</li>
-    <li>NFT phishing airdrops are flagged but not burned here yet; burn them from your wallet app.</li>
-  </ul>
+<section id="plans" class="plans">
+  <h2 class="center">Free, or with the guard</h2>
+  <div class="pgrid">
+    <div class="plan">
+      <h3>Free</h3>
+      <p class="price">US$0</p>
+      <ul><li>Scan, revoke approvals, burn phishing tokens</li><li>Close empty accounts (5% fee on the rent)</li></ul>
+    </div>
+    <div class="plan pro">
+      <h3>Guard</h3>
+      <p class="price">US$49<span> a year</span></p>
+      <ul><li>Everything in Free</li><li>Close empty accounts with no fee</li><li>Hourly watch with Telegram alerts</li><li>A fix-it link with every alert</li><li>Weekly all-clear and a monthly reminder of rent to claim back</li></ul>
+    </div>
+  </div>
+  <p class="small muted center">The guard covers one wallet and doesn't renew by itself; Telegram reminds you a week before it ends.</p>
 </section>
 
-<section class="hardware">
+<section class="two">
+  <div class="panel" id="how">
+    <h2>How it works</h2>
+    <ol>
+      <li>Your browser asks SealGuard's relay for your token accounts, Token-2022 mints, stake and nonce accounts and token names. The relay only forwards read calls to a Solana RPC provider and keeps its API key out of the page.</li>
+      <li>The rules run in your browser: approvals, permanent delegates, transfer hooks, frozen accounts, empty accounts, phishing names, stake withdraw authority, durable nonces, and the wallet account's owner.</li>
+      <li>Fixes are ordinary Token Program instructions (Revoke, Burn, CloseAccount) and System Program nonce withdrawals, built in your browser, simulated, then signed by your wallet. The code is public, so anyone can read exactly what is sent.</li>
+      <li>Scanning, revoking approvals, burning phishing tokens and withdrawing nonce accounts are free. Closing empty token accounts carries a 5% fee on the rent they return (none for wallets with the guard): it's one extra transfer in the same transaction, shown in your wallet before you sign.</li>
+    </ol>
+  </div>
+  <div class="panel limits">
+    <h2>What this can't see</h2>
+    <ul>
+      <li>Most Solana thefts are one signature on a transfer, not a standing approval. SealGuard can't stop you signing on another site. Read your wallet's simulation before every signature, and keep large amounts on a hardware wallet.</li>
+      <li>It reads the chain, not your computer: malware on your device is outside what it can check.</li>
+      <li>NFT phishing airdrops are flagged but not burned here yet; burn them from your wallet app.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="hardware" class="panel hardware">
   <h2>Keep the big amounts somewhere a website can't reach</h2>
   <p>A hardware wallet keeps your key on a small device that shows you what you're about to sign and needs a physical press to do it. A phishing site can still ask; it can't sign for you. If this wallet holds more than you'd be comfortable losing, move that part to a hardware wallet and keep this one for daily use.</p>
   <ul>
@@ -91,19 +147,15 @@
   </ul>
   <p class="small muted">Buy only from the maker's own store, never second-hand or from a marketplace seller: a tampered device is the one attack a hardware wallet can't protect you from. <span id="aff-note">If you buy through these links, SealGuard earns a small commission from the maker; the price you pay is the same.</span></p>
 </section>
-
-<section class="how">
-  <h2>How it works</h2>
-  <ol>
-    <li>Your browser asks SealGuard's relay for your token accounts, Token-2022 mints, stake and nonce accounts and token names. The relay only forwards read calls to a Solana RPC provider and keeps its API key out of the page.</li>
-    <li>The rules run in your browser: approvals, permanent delegates, transfer hooks, frozen accounts, empty accounts, phishing names, stake withdraw authority, durable nonces, and the wallet account's owner.</li>
-    <li>Fixes are ordinary Token Program instructions (Revoke, Burn, CloseAccount) and System Program nonce withdrawals, built in your browser, simulated, then signed by your wallet. The code is public, so anyone can read exactly what is sent.</li>
-    <li>Scanning, revoking approvals, burning phishing tokens and withdrawing nonce accounts are free. Closing empty token accounts carries a 5% fee on the rent they return (none for wallets with the guard): it's one extra transfer in the same transaction, shown in your wallet before you sign.</li>
-  </ol>
-</section>
 </main>
 
-<footer><a href="https://github.com/2cstudiodev-web/sealguard">Source code (MIT)</a> · <a href="https://sealdraw.2cstudio.app">SealDraw</a> · <a href="https://2cstudio.app">2C Studio</a> · support@2cstudio.app<br><span class="small muted">SealGuard reads public chain data and gives general information, not financial or security advice. You decide and sign every transaction yourself; SealGuard isn't responsible for what you choose to revoke, burn or close. <a href="/terms">Terms</a> · <a href="/privacy">Privacy</a></span></footer>
+<footer class="foot">
+  <div class="footin">
+    <div><a class="brand" href="/"><img src="/mark.svg" alt="" width="26" height="26"><span>SealGuard</span></a><p class="small muted">Made by <a href="https://2cstudio.app">2C Studio</a> · support@2cstudio.app</p></div>
+    <div class="footlinks"><a href="https://github.com/2cstudiodev-web/sealguard">Source code (MIT)</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="https://sealdraw.2cstudio.app">SealDraw</a></div>
+  </div>
+  <p class="small muted disclaimer">SealGuard reads public chain data and gives general information, not financial or security advice. You decide and sign every transaction yourself; SealGuard isn't responsible for what you choose to revoke, burn or close.</p>
+</footer>
 <script type="module" src="/src/polyfill.ts"></script>
 <script type="module" src="/src/main.ts"></script>
 </body>

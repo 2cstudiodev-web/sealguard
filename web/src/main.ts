@@ -62,6 +62,15 @@ function showSession(): void {
   $("#session").hidden = false;
   $("#addr").textContent = address ?? "";
   $("#mode").textContent = connected ? "" : "(read-only: connect this wallet to apply fixes)";
+  $("#navconnect").textContent = connected ? shortKey(connected.address) : "Connect wallet";
+}
+
+/** The Connect button in the nav: opens the wallet list in the hero (or, once connected, jumps to the report). */
+function navConnect(): void {
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  if (connected) return;
+  if ($("#connect").hidden) void doDisconnect();
+  openWalletPicker();
 }
 
 async function doConnect(w: import("@wallet-standard/base").Wallet): Promise<void> {
@@ -104,6 +113,7 @@ async function doDisconnect(): Promise<void> {
   $("#report").hidden = true;
   $("#connect").hidden = false;
   $("#walletpick").hidden = true;
+  $("#navconnect").textContent = "Connect wallet";
   setStatus("");
 }
 
@@ -120,6 +130,7 @@ async function doScan(): Promise<void> {
     setStatus("");
     renderReport();
     applyPendingFix();
+    $("#report").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (e: any) {
     setStatus(`Scan failed: ${e?.message || e}`, "err");
   } finally {
@@ -358,6 +369,7 @@ onGuardChange(() => {
 if (pendingFix) setStatus("Connect the wallet this message was about to see the fix.");
 onWalletsChange(renderWallets);
 $("#connectbtn").addEventListener("click", openWalletPicker);
+$("#navconnect").addEventListener("click", navConnect);
 $("#addrform").addEventListener("submit", doScanAddress);
 $("#scanbtn").addEventListener("click", doScan);
 $("#disconnect").addEventListener("click", doDisconnect);
