@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Keypair } from "@solana/web3.js";
 import nacl from "tweetnacl";
 import bs58 from "bs58";
-import { checkSignIn, issueToken, makeNonce, nonceIssuedAt, siwsMessage, verifyToken, webhookSecret } from "../worker/auth";
+import { checkSignIn, issueToken, makeNonce, nonceIssuedAt, siwsMessage, verifySession, verifyToken, webhookSecret } from "../worker/auth";
 
 const SECRET = "test-secret-please-change";
 const kp = Keypair.generate();
@@ -32,7 +32,9 @@ describe("auth", () => {
   it("issues session tokens that verify, expire and can't be forged", () => {
     const t = issueToken(SECRET, W, now);
     expect(verifyToken(SECRET, t, now + 1000)).toBe(W);
-    expect(verifyToken(SECRET, t, now + 31 * 86_400_000)).toBeNull();
+    expect(verifyToken(SECRET, t, now + 6 * 86_400_000)).toBe(W);
+    expect(verifyToken(SECRET, t, now + 8 * 86_400_000)).toBeNull();
+    expect(verifySession(SECRET, t, now + 1000)).toEqual({ wallet: W, iat: now });
     expect(verifyToken("other", t, now)).toBeNull();
     expect(verifyToken(SECRET, t.slice(0, -2) + "zz", now)).toBeNull();
   });

@@ -144,16 +144,35 @@ function render(): void {
   $("#gpay")?.addEventListener("click", startPayment);
 }
 
+/** Has the wallet sign SealGuard's sign-in message (a signature, not a transaction). */
+async function signProof(waiting: string): Promise<{ nonce: string; issuedAt: string; signature: string }> {
+  const c = connected!;
+  const sm: any = c.wallet.features["solana:signMessage"];
+  if (!sm) throw new Error("This wallet can't sign messages; try Phantom, Solflare or Backpack.");
+  note("Preparing the sign-in message…", "busy");
+  const { nonce, issuedAt, message } = await api<{ nonce: string; issuedAt: string; message: string }>("/api/auth/nonce", { wallet: c.address });
+  note(waiting, "busy");
+  const [out] = await sm.signMessage({ account: c.account, message: new TextEncoder().encode(message) });
+  return { nonce, issuedAt, signature: base58(out.signature) };
+}
+
+/** Link and unlink change where alerts go: when the sign-in is older than 10 minutes the server asks for one more
+ *  signature, and this signs it and retries. */
+async function freshApi<T>(path: string): Promise<T> {
+  const keep = (r: any) => { if (typeof r?.token === "string" && connected) { token = r.token; saveToken(connected.address, r.token); } return r as T; };
+  try {
+    return keep(await api<T>(path, {}));
+  } catch (e: any) {
+    if (e?.code !== "resign") throw e;
+    const proof = await signProof("Changing where alerts go needs one more signature. Waiting for it…");
+    return keep(await api<T>(path, { proof }));
+  }
+}
+
 async function signIn(): Promise<void> {
   if (!connected) return;
-  const sm: any = connected.wallet.features["solana:signMessage"];
-  if (!sm) { note("This wallet can't sign messages; try Phantom, Solflare or Backpack.", "err"); return; }
   try {
-    note("Preparing the sign-in message…", "busy");
-    const { nonce, issuedAt, message } = await api<{ nonce: string; issuedAt: string; message: string }>("/api/auth/nonce", { wallet: connected.address });
-    note("Waiting for your signature…", "busy");
-    const [out] = await sm.signMessage({ account: connected.account, message: new TextEncoder().encode(message) });
-    const signature = base58(out.signature);
+    const { nonce, issuedAt, signature } = await signProof("Waiting for your signature…");
     const r = await api<{ token: string }>("/api/auth/verify", { wallet: connected.address, nonce, issuedAt, signature });
     token = r.token;
     saveToken(connected.address, token);
@@ -167,7 +186,7 @@ async function signIn(): Promise<void> {
 
 async function linkTelegram(): Promise<void> {
   try {
-    const r = await api<{ url: string; code: string; expiresAt: number }>("/api/guard/link", {});
+    const r = await freshApi<{ url: string; code: string; expiresAt: number }>("/api/guard/link");
     openTelegram(r.url, status?.botUsername ?? "seal_guard_bot", r.code);
     note("Press Start in Telegram. This page updates by itself once the bot has linked.", "busy");
     showLinkHelp(r.code);
@@ -238,7 +257,7 @@ function hideLinkHelp(): void {
 }
 
 async function unlinkTelegram(): Promise<void> {
-  try { await api("/api/guard/unlink", {}); status = await api<Status>("/api/guard"); render(); } catch (e: any) { note(e?.message || "Failed", "err"); }
+  try { await freshApi("/api/guard/unlink"); status = await api<Status>("/api/guard"); render(); } catch (e: any) { note(e?.message || "Failed", "err"); }
 }
 
 async function startPayment(): Promise<void> {

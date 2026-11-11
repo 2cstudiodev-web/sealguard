@@ -6,7 +6,9 @@ import bs58 from "bs58";
 
 const utf8 = new TextEncoder();
 const NONCE_TTL_MS = 10 * 60 * 1000;
-export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+/** Changing where alerts go needs a sign-in from the last 10 minutes, or a new signature sent along. */
+export const FRESH_SIGNIN_MS = 10 * 60 * 1000;
 export const DOMAIN = "guard.2cstudio.app";
 export const STATEMENT = "Sign in to SealGuard. This is a signature, not a transaction: it moves nothing and costs nothing.";
 
@@ -74,13 +76,18 @@ export async function checkSignIn(secret: string, s: SignIn, now: number): Promi
   return ok ? { ok: true, wallet: s.wallet } : { ok: false, reason: "bad_signature" };
 }
 
-/** base64url(JSON{w, exp}) + "." + base64url(HMAC). */
+/** base64url(JSON{w, iat, exp}) + "." + base64url(HMAC). */
 export function issueToken(secret: string, wallet: string, now: number, ttlMs = SESSION_TTL_MS): string {
-  const payload = b64url(utf8.encode(JSON.stringify({ w: wallet, exp: now + ttlMs })));
+  const payload = b64url(utf8.encode(JSON.stringify({ w: wallet, iat: now, exp: now + ttlMs })));
   return `${payload}.${b64url(hmac(sha256, utf8.encode(secret), utf8.encode(payload)))}`;
 }
 
 export function verifyToken(secret: string, token: string, now: number): string | null {
+  return verifySession(secret, token, now)?.wallet ?? null;
+}
+
+/** The wallet and when it signed in (0 for tokens from before `iat` was added, so they count as not fresh). */
+export function verifySession(secret: string, token: string, now: number): { wallet: string; iat: number } | null {
   const dot = token.indexOf(".");
   if (dot < 0) return null;
   const payload = token.slice(0, dot);
@@ -91,7 +98,7 @@ export function verifyToken(secret: string, token: string, now: number): string 
     const raw = fromB64url(payload);
     const body = JSON.parse(new TextDecoder().decode(raw!));
     if (typeof body.w !== "string" || typeof body.exp !== "number" || body.exp < now) return null;
-    return body.w;
+    return { wallet: body.w, iat: typeof body.iat === "number" ? body.iat : 0 };
   } catch {
     return null;
   }

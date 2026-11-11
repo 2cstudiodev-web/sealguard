@@ -3,7 +3,7 @@
 import { fetchScanInput, rpcOver } from "../shared/chain";
 import { claimText, diffWatch, formatAlerts, watchState, weeklyText, type WatchState } from "../shared/watch";
 import { solWithUsd } from "../web/src/scan";
-import { bearer, checkSignIn, issueToken, makeNonce, siwsMessage, verifyToken, webhookSecret } from "./auth";
+import { bearer, checkSignIn, FRESH_SIGNIN_MS, issueToken, makeNonce, siwsMessage, verifySession, verifyToken, webhookSecret } from "./auth";
 import { buildQuotes, extendPaidUntil, GUARD_USD, jupiterPrices, TEST_QUOTES, PAY_SLACK_MS, PAY_TOKENS, QUOTE_TTL_MS, SKR_MINT, verifyPaymentTx, WSOL_MINT, type ParsedTx, type PayToken } from "./pay";
 import { esc, sendTelegram, setWebhook, startCode } from "./telegram";
 
@@ -45,6 +45,22 @@ function requireWallet(env: GuardEnv, request: Request, now: number): string {
   const w = t ? verifyToken(env.SESSION_SECRET, t, now) : null;
   if (!w) throw new ApiError(401, "unauthorized", "Sign in again");
   return w;
+}
+
+/** Linking or unlinking Telegram changes where alerts go, so someone at an unlocked computer with an old sign-in
+ *  can't redirect them: it needs a sign-in from the last 10 minutes or a new signed message (`proof`). A new
+ *  signature also renews the session token, returned as `token`. */
+async function requireFreshWallet(env: GuardEnv, request: Request, body: any, now: number): Promise<{ wallet: string; token?: string }> {
+  const t = bearer(request);
+  const s = t ? verifySession(env.SESSION_SECRET, t, now) : null;
+  if (!s) throw new ApiError(401, "unauthorized", "Sign in again");
+  if (now - s.iat <= FRESH_SIGNIN_MS) return { wallet: s.wallet };
+  const p = body?.proof;
+  if (p && typeof p.nonce === "string" && typeof p.issuedAt === "string" && typeof p.signature === "string") {
+    const r = await checkSignIn(env.SESSION_SECRET, { wallet: s.wallet, nonce: p.nonce, issuedAt: p.issuedAt, signature: p.signature }, now);
+    if (r.ok) return { wallet: s.wallet, token: issueToken(env.SESSION_SECRET, s.wallet, now) };
+  }
+  throw new ApiError(403, "resign", "Sign once more to change where alerts go.");
 }
 
 async function guardRow(env: GuardEnv, wallet: string): Promise<GuardRow | null> {
@@ -107,19 +123,19 @@ export async function handleApi(request: Request, env: GuardEnv, path: string, n
 
     // A one-time code the user hands to the bot: https://t.me/<bot>?start=<code>
     if (path === "/api/guard/link" && method === "POST") {
-      const wallet = requireWallet(env, request, now);
+      const { wallet, token } = await requireFreshWallet(env, request, await readJson(request), now);
       if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_BOT_USERNAME) throw new ApiError(503, "no_telegram", "Telegram alerts aren't configured yet");
       // Telegram is for members: the link code is only handed out once the guard is paid for.
       const paid = await guardRow(env, wallet);
       if (!paid?.paid_until || paid.paid_until <= now) throw new ApiError(402, "pay_first", "Pay for the guard first; Telegram alerts are for members.");
       const code = randomCode();
       await env.DB.prepare("UPDATE guards SET link_code = ?, link_code_expires = ? WHERE wallet = ?").bind(code, now + LINK_CODE_TTL_MS, wallet).run();
-      return json({ code, url: `https://t.me/${env.TELEGRAM_BOT_USERNAME}?start=${code}`, expiresAt: now + LINK_CODE_TTL_MS });
+      return json({ code, url: `https://t.me/${env.TELEGRAM_BOT_USERNAME}?start=${code}`, expiresAt: now + LINK_CODE_TTL_MS, token });
     }
     if (path === "/api/guard/unlink" && method === "POST") {
-      const wallet = requireWallet(env, request, now);
+      const { wallet, token } = await requireFreshWallet(env, request, await readJson(request), now);
       await env.DB.prepare("UPDATE guards SET telegram_chat_id = NULL WHERE wallet = ?").bind(wallet).run();
-      return json({ ok: true });
+      return json({ ok: true, token });
     }
 
     if (path === "/api/guard/quote" && method === "POST") {
