@@ -21,6 +21,16 @@ export function mintOf(token: PayToken): string {
 
 export type Quote = { token: PayToken; display: string; baseUnits: string };
 
+/**
+ * Tiny prices for wallets on the test list (meta table, key "test_wallets", comma-separated; kept out of the
+ * repo so no personal address is published). They pay into the same treasury and get a real year of guard.
+ */
+export const TEST_QUOTES: Quote[] = [
+  { token: "USDC", display: "0.01", baseUnits: "10000" },
+  { token: "SOL", display: "0.0001", baseUnits: "100000" },
+  { token: "SKR", display: "0.0001", baseUnits: "100" },
+];
+
 /** USD prices from Jupiter, keyed by mint. Missing or failed = no quote for that token. */
 export async function jupiterPrices(mints: string[], fetchFn: typeof fetch = (i, o) => fetch(i, o), priceUrl = PRICE_URL): Promise<Record<string, number>> {
   try {

@@ -14,7 +14,7 @@ const usd = (n: number) => `US$${Number.isInteger(n) ? n : n.toFixed(2)}`;
 
 type Status = { wallet: string | null; active: boolean; paidUntil: number | null; telegramLinked: boolean; botUsername: string | null; lastCheckAt: number | null; checks: number; alerts: number; priceUsd: number };
 type Quote = { token: string; display: string; baseUnits: string };
-type QuoteSet = { quoteId: string; usd: string; memo: string; expiresAt: number; quotes: Quote[]; treasury: string };
+type QuoteSet = { quoteId: string; usd: string; memo: string; expiresAt: number; quotes: Quote[]; treasury: string; test?: boolean };
 
 let connected: Connected | null = null;
 let token: string | null = null;
@@ -225,7 +225,7 @@ async function startPayment(): Promise<void> {
     const q = await api<QuoteSet>("/api/guard/quote", {});
     note("");
     const box = $("#gquotes");
-    box.innerHTML = `<p class="small">Pay with:</p><div class="wallets">${q.quotes.map((x) => `<button class="wbtn" data-token="${x.token}">${esc(x.display)} ${x.token}</button>`).join("")}</div><p class="small muted">The price is held for 15 minutes. One transaction from this wallet to 2C Studio's treasury with a memo; your wallet shows the exact amount before you sign.</p>`;
+    box.innerHTML = `${q.test ? `<p class="small keep">Test prices: this wallet is on the test list.</p>` : ""}<p class="small">Pay with:</p><div class="wallets">${q.quotes.map((x) => `<button class="wbtn" data-token="${x.token}">${esc(x.display)} ${x.token}</button>`).join("")}</div><p class="small muted">The price is held for 15 minutes. One transaction from this wallet to 2C Studio's treasury with a memo; your wallet shows the exact amount before you sign.</p>`;
     box.querySelectorAll<HTMLButtonElement>(".wbtn").forEach((b) => b.addEventListener("click", () => pay(q, b.dataset.token!)));
   } catch (e: any) {
     note(e?.message || "Couldn't get a price", "err");

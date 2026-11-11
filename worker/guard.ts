@@ -4,7 +4,7 @@ import { fetchScanInput, rpcOver } from "../shared/chain";
 import { claimText, diffWatch, formatAlerts, watchState, weeklyText, type WatchState } from "../shared/watch";
 import { solWithUsd } from "../web/src/scan";
 import { bearer, checkSignIn, issueToken, makeNonce, siwsMessage, verifyToken, webhookSecret } from "./auth";
-import { buildQuotes, extendPaidUntil, GUARD_USD, jupiterPrices, PAY_SLACK_MS, PAY_TOKENS, QUOTE_TTL_MS, SKR_MINT, verifyPaymentTx, WSOL_MINT, type ParsedTx, type PayToken } from "./pay";
+import { buildQuotes, extendPaidUntil, GUARD_USD, jupiterPrices, TEST_QUOTES, PAY_SLACK_MS, PAY_TOKENS, QUOTE_TTL_MS, SKR_MINT, verifyPaymentTx, WSOL_MINT, type ParsedTx, type PayToken } from "./pay";
 import { esc, sendTelegram, setWebhook, startCode } from "./telegram";
 
 export interface GuardEnv {
@@ -125,13 +125,14 @@ export async function handleApi(request: Request, env: GuardEnv, path: string, n
     if (path === "/api/guard/quote" && method === "POST") {
       const wallet = requireWallet(env, request, now);
       if (!env.TREASURY) throw new ApiError(503, "no_treasury");
-      const prices = await jupiterPrices([WSOL_MINT, SKR_MINT]);
-      const quotes = buildQuotes(GUARD_USD, prices);
+      const testList = (await env.DB.prepare("SELECT v FROM meta WHERE k = 'test_wallets'").first<{ v: string }>())?.v ?? "";
+      const test = testList.split(",").map((x) => x.trim()).includes(wallet);
+      const quotes = test ? TEST_QUOTES : buildQuotes(GUARD_USD, await jupiterPrices([WSOL_MINT, SKR_MINT]));
       const id = randomCode(16);
       const memo = `sealguard:guard:${id}`;
       const expiresAt = now + QUOTE_TTL_MS;
-      await env.DB.batch(quotes.map((q) => env.DB.prepare("INSERT INTO quotes (id, token, wallet, base_units, display, usd, memo, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").bind(id, q.token, wallet, q.baseUnits, q.display, GUARD_USD.toFixed(2), memo, expiresAt)));
-      return json({ quoteId: id, usd: GUARD_USD.toFixed(2), memo, expiresAt, now, quotes, treasury: env.TREASURY });
+      await env.DB.batch(quotes.map((q) => env.DB.prepare("INSERT INTO quotes (id, token, wallet, base_units, display, usd, memo, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").bind(id, q.token, wallet, q.baseUnits, q.display, test ? "test" : GUARD_USD.toFixed(2), memo, expiresAt)));
+      return json({ quoteId: id, usd: GUARD_USD.toFixed(2), memo, expiresAt, now, quotes, treasury: env.TREASURY, test });
     }
 
     if (path === "/api/guard/pay" && method === "POST") {
