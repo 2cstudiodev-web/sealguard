@@ -1,0 +1,15 @@
+{
+  // SealGuard: the page (built by Vite into dist/) and the /rpc relay on one Worker.
+  //   guard.2cstudio.app
+  // Secret: RPC_URL (Helius URL with key): `npx wrangler secret put RPC_URL`.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "sealguard",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-01",
+  "observability": { "enabled": true },
+  "workers_dev": false,
+  "routes": [
+    { "pattern": "guard.2cstudio.app", "custom_domain": true }
+  ],
+  "assets": { "directory": "dist", "binding": "ASSETS", "run_worker_first": ["/rpc", "/health"] }
+}
