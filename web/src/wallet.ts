@@ -48,6 +48,18 @@ export async function connect(w: Wallet): Promise<Connected> {
   return { wallet: w, account, address: account.address };
 }
 
+/** Reconnects without a prompt when the wallet already trusts this site (Wallet Standard `silent`); null otherwise. */
+export async function connectSilently(w: Wallet): Promise<Connected | null> {
+  try {
+    const f: any = w.features["standard:connect"];
+    const { accounts } = await f.connect({ silent: true });
+    const account = (accounts as WalletAccount[]).find((a) => a.chains.includes(CHAIN)) ?? accounts[0];
+    return account ? { wallet: w, account, address: account.address } : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function disconnect(c: Connected): Promise<void> {
   const f: any = c.wallet.features["standard:disconnect"];
   if (f) await f.disconnect().catch(() => {});

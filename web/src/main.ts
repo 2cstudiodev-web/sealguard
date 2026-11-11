@@ -4,7 +4,7 @@ import { PublicKey } from "@solana/web3.js";
 import { fetchScanInput, rpc } from "./rpc";
 import { CLOSE_FEE_BPS, closeFee, scan, shortKey, solWithUsd, type Action, type Finding, type ScanInput, type ScanResult, type Severity } from "./scan";
 import { buildTransaction, describeAction, describeFee, groupFee, packActions, TXS_PER_APPROVAL } from "./tx";
-import { connect, disconnect, listWallets, onWalletsChange, registerMobile, signAndSendMany, type Connected } from "./wallet";
+import { connect, connectSilently, disconnect, listWallets, onWalletsChange, registerMobile, signAndSendMany, type Connected } from "./wallet";
 import { buyGuard, forgetGuardSession, guardOffered, guardPriceUsd, isGuardMember, onGuardChange, setGuardWallet } from "./guard";
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector(sel) as T;
@@ -77,19 +77,45 @@ function closeWalletPicker(): void {
   $("#walletpick").hidden = true;
 }
 
+// The last wallet used, so a page refresh reconnects it without a prompt (the guard sign-in is kept separately).
+const LAST_WALLET = "sg_wallet";
+function rememberWallet(name: string | null): void {
+  try { name ? localStorage.setItem(LAST_WALLET, name) : localStorage.removeItem(LAST_WALLET); } catch { /* private mode */ }
+}
+
 async function doConnect(w: import("@wallet-standard/base").Wallet): Promise<void> {
   try {
     setStatus("Waiting for the wallet…", "busy");
-    connected = await connect(w);
-    closeWalletPicker();
-    address = connected.address;
-    showSession();
-    setStatus("");
-    void setGuardWallet(connected);
-    await doScan();
+    await onConnected(await connect(w));
   } catch (e: any) {
     setStatus(e?.message || "The wallet didn't connect", "err");
   }
+}
+async function onConnected(c: Connected): Promise<void> {
+  connected = c;
+  rememberWallet(c.wallet.name);
+  closeWalletPicker();
+  address = c.address;
+  showSession();
+  setStatus("");
+  void setGuardWallet(c);
+  await doScan();
+}
+
+/** After a refresh: reconnect the last wallet silently if it's installed and still trusts this site. The phone
+ *  wallet adapter is skipped, since connecting it opens the wallet app. Extensions register a moment after the
+ *  page loads, so this also runs as each one appears, until it has tried once. */
+let autoTried = false;
+async function autoReconnect(): Promise<void> {
+  if (autoTried || connected || address) return;
+  let name: string | null = null;
+  try { name = localStorage.getItem(LAST_WALLET); } catch { /* private mode */ }
+  if (!name || /mobile wallet adapter/i.test(name)) { autoTried = true; return; }
+  const w = listWallets().find((x) => x.name === name);
+  if (!w) return;
+  autoTried = true;
+  const c = await connectSilently(w);
+  if (c && !connected && !address) await onConnected(c);
 }
 
 function doScanAddress(ev: Event): void {
@@ -113,6 +139,7 @@ function doScanAddress(ev: Event): void {
 async function doDisconnect(): Promise<void> {
   $("#navmenu").hidden = true;
   forgetGuardSession();
+  rememberWallet(null);
   if (connected) await disconnect(connected);
   void setGuardWallet(null);
   connected = null; address = null; result = null; lastInput = null; selected = new Set();
@@ -408,7 +435,8 @@ onGuardChange(() => {
   renderReport();
 });
 if (pendingFix) setStatus("Connect the wallet this message was about to see the fix.");
-onWalletsChange(renderWallets);
+onWalletsChange(() => { renderWallets(); void autoReconnect(); });
+void autoReconnect();
 $("#navconnect").addEventListener("click", navConnect);
 $("#pickclose").addEventListener("click", closeWalletPicker);
 $("#walletpick").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeWalletPicker(); });
