@@ -137,7 +137,7 @@ export async function handleApi(request: Request, env: GuardEnv, path: string, n
       const rpc = rpcOver(env.RPC_URL, 20_000);
       let tx: ParsedTx | null = null;
       try {
-        tx = (await rpc<ParsedTx | null>("getTransaction", [signature, { encoding: "jsonParsed", commitment: "confirmed", maxSupportedTransactionVersion: 0 }])) ?? null;
+        tx = (await rpc<ParsedTx | null>("getTransaction", [signature, { encoding: "jsonParsed", commitment: "confirmed", maxSupportedTransactionVersion: 1 }])) ?? null;
       } catch (e: any) {
         // A malformed signature is the caller's mistake; a provider hiccup is retried by the page.
         if (/invalid/i.test(String(e?.message))) throw new ApiError(400, "bad_signature", "That isn't a transaction signature");
