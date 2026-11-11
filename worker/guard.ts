@@ -38,7 +38,7 @@ function randomCode(len = 24): string {
   return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("");
 }
 
-type GuardRow = { wallet: string; created_at: number; paid_until: number | null; telegram_chat_id: string | null; link_code: string | null; link_code_expires: number | null; baseline: string | null; last_check_at: number | null; last_alert_at: number | null; checks: number; alerts: number; last_error: string | null; activated_at?: number | null; last_weekly_at?: number | null; weekly_checks_base?: number; weekly_alerts_base?: number; last_claim_notice_at?: number | null };
+type GuardRow = { wallet: string; created_at: number; paid_until: number | null; telegram_chat_id: string | null; link_code: string | null; link_code_expires: number | null; baseline: string | null; last_check_at: number | null; last_alert_at: number | null; checks: number; alerts: number; last_error: string | null; activated_at?: number | null; last_weekly_at?: number | null; weekly_checks_base?: number; weekly_alerts_base?: number; last_claim_notice_at?: number | null; last_test_at?: number | null };
 
 function requireWallet(env: GuardEnv, request: Request, now: number): string {
   const t = bearer(request);
@@ -134,8 +134,23 @@ export async function handleApi(request: Request, env: GuardEnv, path: string, n
     }
     if (path === "/api/guard/unlink" && method === "POST") {
       const { wallet, token } = await requireFreshWallet(env, request, await readJson(request), now);
+      const before = await guardRow(env, wallet);
       await env.DB.prepare("UPDATE guards SET telegram_chat_id = NULL WHERE wallet = ?").bind(wallet).run();
+      // Say so in the chat too, so it's clear there that alerts have stopped.
+      if (before?.telegram_chat_id && env.TELEGRAM_BOT_TOKEN) await sendTelegram(env.TELEGRAM_BOT_TOKEN, before.telegram_chat_id, unlinkedText(wallet)).catch(() => {});
       return json({ ok: true, token });
+    }
+
+    // A sample alert to the linked chat, to see what alerts look like and that they arrive. One a minute.
+    if (path === "/api/guard/test" && method === "POST") {
+      const wallet = requireWallet(env, request, now);
+      const g = await guardRow(env, wallet);
+      if (!g?.paid_until || g.paid_until <= now) throw new ApiError(402, "pay_first", "Test alerts are for wallets with the guard.");
+      if (!g.telegram_chat_id || !env.TELEGRAM_BOT_TOKEN) throw new ApiError(409, "no_telegram", "Link Telegram first.");
+      if (g.last_test_at && now - g.last_test_at < TEST_ALERT_GAP_MS) throw new ApiError(429, "too_soon", "One test alert a minute; try again shortly.");
+      await env.DB.prepare("UPDATE guards SET last_test_at = ? WHERE wallet = ?").bind(now, wallet).run();
+      await sendTelegram(env.TELEGRAM_BOT_TOKEN, g.telegram_chat_id, testAlertText(wallet));
+      return json({ ok: true });
     }
 
     if (path === "/api/guard/quote" && method === "POST") {
@@ -193,8 +208,9 @@ export async function handleApi(request: Request, env: GuardEnv, path: string, n
       const update = await readJson(request);
       const s = startCode(update);
       if (s) {
-        const g = await env.DB.prepare("SELECT wallet, link_code_expires FROM guards WHERE link_code = ?").bind(s.code).first<{ wallet: string; link_code_expires: number }>();
+        const g = await env.DB.prepare("SELECT wallet, link_code_expires, telegram_chat_id FROM guards WHERE link_code = ?").bind(s.code).first<{ wallet: string; link_code_expires: number; telegram_chat_id: string | null }>();
         if (g && g.link_code_expires > now) {
+          if (g.telegram_chat_id && g.telegram_chat_id !== s.chatId) await sendTelegram(env.TELEGRAM_BOT_TOKEN, g.telegram_chat_id, movedText(g.wallet)).catch(() => {});
           await env.DB.prepare("UPDATE guards SET telegram_chat_id = ?, link_code = NULL, link_code_expires = NULL WHERE wallet = ?").bind(s.chatId, g.wallet).run();
           await sendTelegram(env.TELEGRAM_BOT_TOKEN, s.chatId, `✅ Linked to wallet <code>${esc(g.wallet)}</code>. SealGuard will message you here when something in that wallet changes for the worse.`);
         } else {
@@ -214,6 +230,18 @@ export async function handleApi(request: Request, env: GuardEnv, path: string, n
 }
 
 const DAY_MS = 86_400_000;
+const TEST_ALERT_GAP_MS = 60_000;
+
+export function unlinkedText(wallet: string): string {
+  return `🔌 Unlinked from wallet <code>${esc(wallet)}</code>. SealGuard won't send alerts for it here any more. To link again, open https://guard.2cstudio.app/ and press Link Telegram.`;
+}
+export function movedText(wallet: string): string {
+  return `🔌 Alerts for wallet <code>${esc(wallet)}</code> now go to another Telegram chat, so this chat won't get them any more. If that wasn't you, open https://guard.2cstudio.app/ and link this chat again.`;
+}
+export function testAlertText(wallet: string): string {
+  return `🧪 <b>Test alert</b>, sent from the SealGuard page. Nothing has changed in your wallet; this shows what an alert looks like.\n\n` +
+    formatAlerts(wallet, [{ severity: "high", text: "Example: address 9xQe…VFin can now spend up to 1,000 USDC from this wallet. Real alerts end with a Fix it link that opens the fix on SealGuard." }], esc);
+}
 export const REMIND_BEFORE_MS = 7 * DAY_MS;
 const shortWallet = (w: string) => `${w.slice(0, 4)}…${w.slice(-4)}`;
 const dayText = (ms: number) => new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });

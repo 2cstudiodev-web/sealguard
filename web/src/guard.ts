@@ -125,7 +125,7 @@ function render(): void {
   if (s.active) {
     lines.push(`<p class="okline">✅ Guard active until <b>${new Date(s.paidUntil!).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</b>. ${s.checks ? `Checked ${s.checks} time${s.checks === 1 ? "" : "s"}, ${s.alerts} alert${s.alerts === 1 ? "" : "s"} sent.` : s.telegramLinked ? "First check within the hour." : ""}</p>`);
     if (s.telegramLinked) {
-      lines.push(`<p>📨 Telegram linked. <button id="gunlink" class="linkbtn">Unlink</button></p>`);
+      lines.push(`<p>📨 Telegram linked. <button id="gtest" class="btn small" type="button">Send a test alert</button> <button id="gunlink" class="linkbtn">Unlink</button></p>`);
     } else if (s.botUsername) {
       lines.push(`<p>Step 2: <button id="glink" class="btn primary small">Link Telegram</button> <span class="small muted">opens the SealGuard bot; press Start there. Alerts start once it's linked.</span></p>`);
     } else {
@@ -141,6 +141,7 @@ function render(): void {
   box.innerHTML = lines.join("");
   $("#glink")?.addEventListener("click", linkTelegram);
   $("#gunlink")?.addEventListener("click", unlinkTelegram);
+  $("#gtest")?.addEventListener("click", sendTestAlert);
   $("#gpay")?.addEventListener("click", startPayment);
 }
 
@@ -260,8 +261,18 @@ function hideLinkHelp(): void {
   box.innerHTML = "";
 }
 
+async function sendTestAlert(): Promise<void> {
+  try {
+    note("Sending a test alert…", "busy");
+    await api("/api/guard/test", {});
+    note("Test alert sent. Check Telegram.", "ok");
+  } catch (e: any) {
+    note(e?.message || "Couldn't send the test alert", "err");
+  }
+}
+
 async function unlinkTelegram(): Promise<void> {
-  try { await freshApi("/api/guard/unlink"); status = await api<Status>("/api/guard"); render(); } catch (e: any) { note(e?.message || "Failed", "err"); }
+  try { await freshApi("/api/guard/unlink"); status = await api<Status>("/api/guard"); render(); note("Unlinked. Telegram alerts have stopped.", "ok"); } catch (e: any) { note(e?.message || "Failed", "err"); }
 }
 
 async function startPayment(): Promise<void> {
