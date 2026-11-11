@@ -146,8 +146,8 @@ export const CLOSE_FEE_BPS = 500;
 export const CLOSE_FEE_PERCENT = CLOSE_FEE_BPS / 100;
 
 /** The fee on `lamports` of returned rent, rounded down. */
-export function closeFee(lamports: number): number {
-  return Math.floor((lamports * CLOSE_FEE_BPS) / 10_000);
+export function closeFee(lamports: number, bps: number = CLOSE_FEE_BPS): number {
+  return Math.floor((lamports * bps) / 10_000);
 }
 
 const URL_RE = /(https?:\/\/|www\.|\b[a-z0-9-]+\.(com|io|xyz|app|net|org|fi|gg|co|site|link|me|lol|wtf|fun)\b|t\.me\/)/i;
@@ -203,7 +203,13 @@ function assetName(mint: string, assets: Record<string, AssetMeta>): string {
   return shortKey(mint);
 }
 
-export function scan(input: ScanInput): ScanResult {
+export type ScanOptions = {
+  /** The fee on rent returned by closing empty accounts; 0 for wallets with an active guard. */
+  closeFeeBps?: number;
+};
+
+export function scan(input: ScanInput, opts: ScanOptions = {}): ScanResult {
+  const feeBps = opts.closeFeeBps ?? CLOSE_FEE_BPS;
   const f: Finding[] = [];
   const { wallet, tokenAccounts, mints, assets } = input;
   const solPrice = input.solPriceUsd ?? null;
@@ -308,7 +314,7 @@ export function scan(input: ScanInput): ScanResult {
       f.push({
         check: "empty", severity: "ok",
         title: t.isNative ? "Empty wrapped-SOL account" : `Empty ${name} account`,
-        detail: `Nothing in it. Closing it returns its ${solWithUsd(t.lamports ?? TOKEN_ACCOUNT_RENT_LAMPORTS, solPrice)} rent deposit to you, less SealGuard's ${CLOSE_FEE_PERCENT}% fee.`,
+        detail: `Nothing in it. Closing it returns its ${solWithUsd(t.lamports ?? TOKEN_ACCOUNT_RENT_LAMPORTS, solPrice)} rent deposit to you, ${feeBps ? `less SealGuard's ${feeBps / 100}% fee` : "with no fee because this wallet has the guard"}.`,
         accounts: [t.address],
         action: { kind: "close", tokenAccount: t.address, mint: t.mint, program: t.program, lamports: t.lamports ?? TOKEN_ACCOUNT_RENT_LAMPORTS },
       });
@@ -367,7 +373,7 @@ export function scan(input: ScanInput): ScanResult {
   for (const x of f) counts[x.severity]++;
   const emptyCount = f.filter((x) => x.check === "empty").length;
   const emptyLamports = f.reduce((sum, x) => sum + (x.action?.kind === "close" ? x.action.lamports : 0), 0);
-  const emptyFee = closeFee(emptyLamports);
+  const emptyFee = closeFee(emptyLamports, feeBps);
   const score = Math.max(0, 100 - scorePenalty(f));
   return {
     score, findings: f, counts,

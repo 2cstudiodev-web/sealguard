@@ -2,10 +2,10 @@ import "./polyfill";
 import { Buffer } from "buffer";
 import { PublicKey } from "@solana/web3.js";
 import { fetchScanInput, rpc } from "./rpc";
-import { CLOSE_FEE_PERCENT, closeFee, scan, shortKey, solWithUsd, type Action, type Finding, type ScanResult, type Severity } from "./scan";
+import { CLOSE_FEE_BPS, closeFee, scan, shortKey, solWithUsd, type Action, type Finding, type ScanInput, type ScanResult, type Severity } from "./scan";
 import { batchActions, buildTransaction, describeAction, describeFee, groupFee } from "./tx";
 import { connect, disconnect, listWallets, onWalletsChange, registerMobile, signAndSend, type Connected } from "./wallet";
-import { setGuardWallet } from "./guard";
+import { isGuardMember, onGuardChange, setGuardWallet } from "./guard";
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector(sel) as T;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
@@ -16,6 +16,17 @@ let address: string | null = null;
 let connected: Connected | null = null;
 let result: ScanResult | null = null;
 let selected = new Set<number>();
+let lastInput: ScanInput | null = null;
+
+/** Members (active guard, signed in) close empty accounts with no fee. */
+const feeBps = () => (isGuardMember() ? 0 : CLOSE_FEE_BPS);
+
+/**
+ * Links from the guard's Telegram messages: ?fix=<account> selects the fix for that account, ?claim=1 selects
+ * every empty-account close. Applied once this wallet is connected and scanned.
+ */
+const params = new URLSearchParams(location.search);
+let pendingFix: { claim: boolean; fix: string | null } | null = params.get("claim") === "1" || params.get("fix") ? { claim: params.get("claim") === "1", fix: params.get("fix") } : null;
 
 function setStatus(text: string, kind: "" | "busy" | "err" = ""): void {
   const el = $("#status");
@@ -88,7 +99,7 @@ function doScanAddress(ev: Event): void {
 async function doDisconnect(): Promise<void> {
   if (connected) await disconnect(connected);
   void setGuardWallet(null);
-  connected = null; address = null; result = null; selected = new Set();
+  connected = null; address = null; result = null; lastInput = null; selected = new Set();
   $("#session").hidden = true;
   $("#report").hidden = true;
   $("#connect").hidden = false;
@@ -102,10 +113,12 @@ async function doScan(): Promise<void> {
   $("#report").hidden = true;
   try {
     const input = await fetchScanInput(address, (s) => setStatus(`${s}…`, "busy"));
-    result = scan(input);
+    lastInput = input;
+    result = scan(input, { closeFeeBps: feeBps() });
     selected = new Set();
     setStatus("");
     renderReport();
+    applyPendingFix();
   } catch (e: any) {
     setStatus(`Scan failed: ${e?.message || e}`, "err");
   } finally {
@@ -129,7 +142,10 @@ function renderReport(): void {
     : "Nothing to flag. Nobody but you can move your tokens, no phishing tokens, no stray nonce or stake authorities.";
   const reclaim = $("#reclaim");
   reclaim.hidden = r.reclaim.accounts === 0;
-  reclaim.textContent = r.reclaim.accounts ? `You can get ${solWithUsd(r.reclaim.net, r.solPriceUsd)} back by closing ${r.reclaim.accounts} empty token account${r.reclaim.accounts === 1 ? "" : "s"} (${solWithUsd(r.reclaim.lamports, null)} of rent, less SealGuard's ${CLOSE_FEE_PERCENT}% fee).` : "";
+  const plural = r.reclaim.accounts === 1 ? "" : "s";
+  reclaim.textContent = !r.reclaim.accounts ? ""
+    : r.reclaim.fee ? `You can get ${solWithUsd(r.reclaim.net, r.solPriceUsd)} back by closing ${r.reclaim.accounts} empty token account${plural} (${solWithUsd(r.reclaim.lamports, null)} of rent, less SealGuard's ${CLOSE_FEE_BPS / 100}% fee).`
+    : `You can get ${solWithUsd(r.reclaim.net, r.solPriceUsd)} back by closing ${r.reclaim.accounts} empty token account${plural}, with no fee because this wallet has the guard.`;
   $("#checked").textContent = `Looked at ${r.checked.tokenAccounts} token accounts, ${r.checked.mints} Token-2022 mints, ${r.checked.stakes} stake accounts and ${r.checked.nonces} nonce accounts.` + (r.warnings.length ? ` ${r.warnings.join(" ")}` : "");
 
   const list = $("#findings");
@@ -139,12 +155,36 @@ function renderReport(): void {
     for (const i of idx) { if (cb.checked) selected.add(i); else selected.delete(i); }
     renderFixBar();
   }));
+  restoreChecks();
   list.querySelectorAll<HTMLButtonElement>(".more").forEach((b) => b.addEventListener("click", () => {
     const ul = b.nextElementSibling as HTMLElement;
     ul.hidden = !ul.hidden;
     b.textContent = ul.hidden ? b.dataset.show! : "Hide the list";
   }));
   renderFixBar();
+}
+
+/** Ticks the boxes of what's selected (after a re-render, e.g. when membership changes the prices). */
+function restoreChecks(): void {
+  $("#findings").querySelectorAll<HTMLInputElement>("input[type=checkbox]").forEach((cb) => {
+    const idx = String(cb.dataset.i).split(",").map(Number);
+    cb.checked = idx.length > 0 && idx.every((i) => selected.has(i));
+  });
+}
+
+function applyPendingFix(): void {
+  if (!pendingFix || !connected || !result) return;
+  const p = pendingFix;
+  pendingFix = null;
+  history.replaceState(null, "", location.pathname);
+  let n = 0;
+  result.findings.forEach((f, i) => {
+    if (!f.action) return;
+    if ((p.claim && f.action.kind === "close") || (p.fix && f.accounts.includes(p.fix))) { selected.add(i); n++; }
+  });
+  restoreChecks();
+  renderFixBar();
+  setStatus(n ? "Selected from your SealGuard message. Check it and press Fix selected." : "Nothing from that link needs fixing any more.");
 }
 
 /** Findings of one check and severity are shown as one card once there are four or more (a whale wallet can have hundreds). */
@@ -214,10 +254,14 @@ function renderFixBar(): void {
   // The full list is there for anyone who wants to read every instruction, but folded: sixteen "close empty
   // account" lines pushed the button off the screen.
   const list = $("#fixlist");
-  const fee = batchActions(acts).reduce((sum, g) => sum + groupFee(g), 0);
+  const bps = feeBps();
+  const fee = batchActions(acts).reduce((sum, g) => sum + groupFee(g, bps), 0);
   list.innerHTML = acts.map((a) => `<li>${esc(describeAction(a))}</li>`).join("") + (fee ? `<li>${esc(describeFee(fee))}</li>` : "");
   const closing = acts.filter((a) => a.kind === "close").reduce((sum, a) => sum + (a.kind === "close" ? a.lamports : 0), 0);
-  $("#fixfee").textContent = closing ? `Closing empty accounts returns ${solWithUsd(closing - closeFee(closing), result?.solPriceUsd ?? null)} to you after SealGuard's ${CLOSE_FEE_PERCENT}% fee (${solWithUsd(closeFee(closing), result?.solPriceUsd ?? null)}). Revoking and burning are free.` : "All selected fixes are free.";
+  const price = result?.solPriceUsd ?? null;
+  $("#fixfee").textContent = !closing ? "All selected fixes are free."
+    : bps ? `Closing empty accounts returns ${solWithUsd(closing - closeFee(closing, bps), price)} to you after SealGuard's ${bps / 100}% fee (${solWithUsd(closeFee(closing, bps), price)}). Revoking and burning are free. Free for wallets with the guard.`
+    : `Closing empty accounts returns ${solWithUsd(closing, price)} to you. No fee: this wallet has the guard.`;
   list.hidden = true;
   const burning = acts.some((a) => a.kind === "burnClose");
   $("#burnackrow").hidden = !burning;
@@ -247,7 +291,7 @@ async function doFix(): Promise<void> {
     for (let g = 0; g < groups.length; g++) {
       setStatus(`Transaction ${g + 1} of ${groups.length}: preparing…`, "busy");
       const bh = await rpc<any>("getLatestBlockhash", [{ commitment: "confirmed" }]);
-      const tx = buildTransaction(groups[g], owner, bh.value.blockhash, bh.value.lastValidBlockHeight);
+      const tx = buildTransaction(groups[g], owner, bh.value.blockhash, bh.value.lastValidBlockHeight, { feeBps: feeBps() });
       const sim = await rpc<any>("simulateTransaction", [tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64"), { encoding: "base64", sigVerify: false, replaceRecentBlockhash: true }]);
       if (sim?.value?.err) throw new Error(`The network rejected transaction ${g + 1} in simulation: ${JSON.stringify(sim.value.err)}. Nothing was sent.`);
       setStatus(`Transaction ${g + 1} of ${groups.length}: waiting for your signature…`, "busy");
@@ -265,6 +309,13 @@ async function doFix(): Promise<void> {
 }
 
 registerMobile();
+// Membership changes the fee on closing empty accounts: re-price the report already on screen.
+onGuardChange(() => {
+  if (!lastInput || !connected) return;
+  result = scan(lastInput, { closeFeeBps: feeBps() });
+  renderReport();
+});
+if (pendingFix) setStatus("Connect the wallet this message was about to see the fix.");
 onWalletsChange(renderWallets);
 $("#connectbtn").addEventListener("click", openWalletPicker);
 $("#addrform").addEventListener("submit", doScanAddress);

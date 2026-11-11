@@ -63,3 +63,9 @@ footer{max-width:820px;margin:20px auto 0;padding:18px;border-top:1px solid var(
 .linkhelp code{background:#0b0f17;border:1px solid var(--line);padding:6px 10px;border-radius:8px;font-size:14px;color:var(--fg);word-break:break-all;user-select:all}
 .burnack{display:flex;gap:8px;align-items:flex-start;font-size:13px;color:#ffb347;margin:4px 0 10px;cursor:pointer}
 .burnack input{margin-top:3px}
+.tablewrap{overflow-x:auto}
+.plantable{width:100%;border-collapse:collapse;font-size:14px;margin:0 0 8px}
+.plantable th,.plantable td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);color:var(--dim)}
+.plantable th{color:var(--fg);font-weight:700}
+.plantable td:nth-child(n+2),.plantable th:nth-child(n+2){text-align:center;white-space:nowrap}
+.plantable td:last-child,.plantable th:last-child{color:var(--acc)}

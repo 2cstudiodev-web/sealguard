@@ -21,6 +21,21 @@ let token: string | null = null;
 let status: Status | null = null;
 let pollTimer: number | null = null;
 let guardAvailable: boolean | null = null;
+const listeners: (() => void)[] = [];
+let lastMember = false;
+
+/** True when the connected wallet is signed in and its guard is active (members close empty accounts with no fee). */
+export function isGuardMember(): boolean {
+  return Boolean(connected && token && status?.active && status.wallet === connected.address);
+}
+/** main.ts re-prices the report when membership changes. */
+export function onGuardChange(cb: () => void): void {
+  listeners.push(cb);
+}
+function notifyChange(): void {
+  const m = isGuardMember();
+  if (m !== lastMember) { lastMember = m; listeners.forEach((f) => f()); }
+}
 
 function loadToken(wallet: string): string | null {
   try {
@@ -54,12 +69,12 @@ export async function setGuardWallet(c: Connected | null): Promise<void> {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   const card = $("#guard");
   hideLinkHelp();
-  if (!c) { card.hidden = true; token = null; status = null; return; }
+  if (!c) { card.hidden = true; token = null; status = null; notifyChange(); return; }
   // The card only makes sense where the guard is configured (session secret set on the Worker).
   if (guardAvailable === null) {
     try { guardAvailable = Boolean(((await (await fetch("/health")).json()) as any)?.guard); } catch { guardAvailable = false; }
   }
-  if (!guardAvailable) { card.hidden = true; return; }
+  if (!guardAvailable) { card.hidden = true; notifyChange(); return; }
   card.hidden = false;
   token = loadToken(c.address);
   status = null;
@@ -70,11 +85,14 @@ export async function setGuardWallet(c: Connected | null): Promise<void> {
   render();
 }
 
+const PITCH = "Get a Telegram message within the hour when something in this wallet changes for the worse: a new approval, a nonce account, a changed stake authority, a phishing airdrop, or the wallet account itself being taken over.";
+
 function render(): void {
   const box = $("#gbody");
   if (!connected) return;
+  notifyChange();
   if (!token || !status) {
-    box.innerHTML = `<p>Get a Telegram message within the hour when something in this wallet changes for the worse: a new approval, a nonce account, a changed stake authority, a phishing airdrop, or the wallet account itself being taken over. <b>${usd(DEFAULT_PRICE_USD)} a year</b>, paid in USDC, SOL or SKR from this wallet.</p>
+    box.innerHTML = `<p>${PITCH} It also makes closing empty accounts free. <b>${usd(DEFAULT_PRICE_USD)} a year</b>, paid in USDC, SOL or SKR from this wallet.</p>
 <p class="small muted">Signing in is a signature on a short message, not a transaction: it moves nothing and costs nothing.</p>
 <button id="gsignin" class="btn primary">Sign in to set it up</button>`;
     $("#gsignin").addEventListener("click", signIn);
@@ -83,19 +101,20 @@ function render(): void {
   const s = status;
   const lines: string[] = [];
   if (s.active) {
-    lines.push(`<p class="okline">✅ Guard active until <b>${new Date(s.paidUntil!).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</b>. ${s.checks ? `Checked ${s.checks} time${s.checks === 1 ? "" : "s"}, ${s.alerts} alert${s.alerts === 1 ? "" : "s"} sent.` : "First check within the hour."}</p>`);
+    lines.push(`<p class="okline">✅ Guard active until <b>${new Date(s.paidUntil!).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</b>. ${s.checks ? `Checked ${s.checks} time${s.checks === 1 ? "" : "s"}, ${s.alerts} alert${s.alerts === 1 ? "" : "s"} sent.` : s.telegramLinked ? "First check within the hour." : ""}</p>`);
+    if (s.telegramLinked) {
+      lines.push(`<p>📨 Telegram linked. <button id="gunlink" class="linkbtn">Unlink</button></p>`);
+    } else if (s.botUsername) {
+      lines.push(`<p>Step 2: <button id="glink" class="btn primary small">Link Telegram</button> <span class="small muted">opens the SealGuard bot; press Start there. Alerts start once it's linked.</span></p>`);
+    } else {
+      lines.push(`<p class="small muted">Telegram alerts aren't switched on for this deployment yet.</p>`);
+    }
+    lines.push(`<p><button id="gpay" class="btn small">Extend by a year (${usd(s.priceUsd)})</button></p><div id="gquotes"></div>`);
   } else {
-    lines.push(`<p>Get a Telegram message within the hour when something in this wallet changes for the worse. <b>${usd(s.priceUsd)} a year</b>, paid in USDC, SOL or SKR from this wallet.</p>`);
+    lines.push(`<p>${PITCH} It also makes closing empty accounts free. <b>${usd(s.priceUsd)} a year</b>, paid in USDC, SOL or SKR from this wallet.</p>`);
+    lines.push(`<p>Step 1: <button id="gpay" class="btn primary small">Pay ${usd(s.priceUsd)} for a year</button></p><div id="gquotes"></div>`);
+    lines.push(`<p class="small muted">Step 2, once paid: link Telegram, where the alerts arrive.</p>`);
   }
-  if (s.telegramLinked) {
-    lines.push(`<p>📨 Telegram linked. <button id="gunlink" class="linkbtn">Unlink</button></p>`);
-  } else if (s.botUsername) {
-    lines.push(`<p>Step 1: <button id="glink" class="btn small">Link Telegram</button> <span class="small muted">opens the SealGuard bot; press Start there.</span></p>`);
-  } else {
-    lines.push(`<p class="small muted">Telegram alerts aren't switched on for this deployment yet.</p>`);
-  }
-  if (!s.active) lines.push(`<p>Step 2: <button id="gpay" class="btn primary small"${s.telegramLinked ? "" : " disabled"}>Pay ${usd(s.priceUsd)} for a year</button></p><div id="gquotes"></div>`);
-  else lines.push(`<p><button id="gpay" class="btn small">Extend by a year (${usd(s.priceUsd)})</button></p><div id="gquotes"></div>`);
   lines.push(`<p class="small muted">Alerts go only to your Telegram. SealGuard stores the wallet address, the chat id and a summary of the last check; nothing else.</p>`);
   box.innerHTML = lines.join("");
   $("#glink")?.addEventListener("click", linkTelegram);

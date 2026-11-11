@@ -1,7 +1,8 @@
 // The guard: sign in, link Telegram, pay for a year, and the cron that re-scans every watched wallet and
 // messages the owner when something changed for the worse.
 import { fetchScanInput, rpcOver } from "../shared/chain";
-import { diffWatch, formatAlerts, watchState, type WatchState } from "../shared/watch";
+import { claimText, diffWatch, formatAlerts, watchState, weeklyText, type WatchState } from "../shared/watch";
+import { solWithUsd } from "../web/src/scan";
 import { bearer, checkSignIn, issueToken, makeNonce, siwsMessage, verifyToken, webhookSecret } from "./auth";
 import { buildQuotes, extendPaidUntil, GUARD_USD, jupiterPrices, PAY_SLACK_MS, PAY_TOKENS, QUOTE_TTL_MS, SKR_MINT, verifyPaymentTx, WSOL_MINT, type ParsedTx, type PayToken } from "./pay";
 import { esc, sendTelegram, setWebhook, startCode } from "./telegram";
@@ -37,7 +38,7 @@ function randomCode(len = 24): string {
   return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("");
 }
 
-type GuardRow = { wallet: string; created_at: number; paid_until: number | null; telegram_chat_id: string | null; link_code: string | null; link_code_expires: number | null; baseline: string | null; last_check_at: number | null; last_alert_at: number | null; checks: number; alerts: number; last_error: string | null };
+type GuardRow = { wallet: string; created_at: number; paid_until: number | null; telegram_chat_id: string | null; link_code: string | null; link_code_expires: number | null; baseline: string | null; last_check_at: number | null; last_alert_at: number | null; checks: number; alerts: number; last_error: string | null; activated_at?: number | null; last_weekly_at?: number | null; weekly_checks_base?: number; weekly_alerts_base?: number; last_claim_notice_at?: number | null };
 
 function requireWallet(env: GuardEnv, request: Request, now: number): string {
   const t = bearer(request);
@@ -96,6 +97,9 @@ export async function handleApi(request: Request, env: GuardEnv, path: string, n
     if (path === "/api/guard/link" && method === "POST") {
       const wallet = requireWallet(env, request, now);
       if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_BOT_USERNAME) throw new ApiError(503, "no_telegram", "Telegram alerts aren't configured yet");
+      // Telegram is for members: the link code is only handed out once the guard is paid for.
+      const paid = await guardRow(env, wallet);
+      if (!paid?.paid_until || paid.paid_until <= now) throw new ApiError(402, "pay_first", "Pay for the guard first; Telegram alerts are for members.");
       const code = randomCode();
       await env.DB.prepare("UPDATE guards SET link_code = ?, link_code_expires = ? WHERE wallet = ?").bind(code, now + LINK_CODE_TTL_MS, wallet).run();
       return json({ code, url: `https://t.me/${env.TELEGRAM_BOT_USERNAME}?start=${code}`, expiresAt: now + LINK_CODE_TTL_MS });
@@ -149,7 +153,7 @@ export async function handleApi(request: Request, env: GuardEnv, path: string, n
       await env.DB.batch([
         env.DB.prepare("UPDATE quotes SET used = 1 WHERE id = ?").bind(quoteId),
         env.DB.prepare("INSERT INTO payments (signature, wallet, quote_id, token, base_units, usd, paid_at, paid_until) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").bind(signature, wallet, quoteId, token, q.base_units, q.usd, now, paidUntil),
-        env.DB.prepare("UPDATE guards SET paid_until = ?, baseline = COALESCE(?, baseline), last_error = NULL WHERE wallet = ?").bind(paidUntil, baseline, wallet),
+        env.DB.prepare("UPDATE guards SET activated_at = CASE WHEN paid_until IS NULL OR paid_until < ? THEN ? ELSE activated_at END, paid_until = ?, baseline = COALESCE(?, baseline), last_error = NULL WHERE wallet = ?").bind(now, now, paidUntil, baseline, wallet),
       ]);
       return json({ ok: true, paidUntil });
     }
@@ -218,6 +222,30 @@ export async function sendRenewalNotices(env: GuardEnv, now: number, fetchFn: ty
   return { reminded, ended };
 }
 
+const WEEK_MS = 7 * DAY_MS;
+const CLAIM_EVERY_MS = 30 * DAY_MS;
+/** The monthly rent reminder only goes out when closing would return at least this much (0.01 SOL). */
+export const CLAIM_MIN_LAMPORTS = 10_000_000;
+
+/** After a check: the weekly all-clear, and the monthly reminder of rent to claim back. */
+export async function sendDigests(env: GuardEnv, g: GuardRow, next: WatchState, solPriceUsd: number | null, alertsJustSent: number, now: number, fetchFn: typeof fetch = (i, o) => fetch(i, o)): Promise<void> {
+  if (!env.TELEGRAM_BOT_TOKEN || !g.telegram_chat_id || !g.paid_until) return;
+  const started = g.activated_at ?? g.created_at;
+  if (now - (g.last_weekly_at ?? started) >= WEEK_MS) {
+    const checks = g.checks + 1 - (g.weekly_checks_base ?? 0);
+    const alerts = g.alerts + alertsJustSent - (g.weekly_alerts_base ?? 0);
+    if (await sendTelegram(env.TELEGRAM_BOT_TOKEN, g.telegram_chat_id, weeklyText(g.wallet, checks, alerts, g.paid_until, esc), fetchFn)) {
+      await env.DB.prepare("UPDATE guards SET last_weekly_at = ?, weekly_checks_base = ?, weekly_alerts_base = ? WHERE wallet = ?").bind(now, g.checks + 1, g.alerts + alertsJustSent, g.wallet).run();
+    }
+  }
+  const lamports = next.reclaimLamports ?? 0;
+  if (now - (g.last_claim_notice_at ?? started) >= CLAIM_EVERY_MS && lamports >= CLAIM_MIN_LAMPORTS) {
+    if (await sendTelegram(env.TELEGRAM_BOT_TOKEN, g.telegram_chat_id, claimText(g.wallet, next.emptyAccounts ?? 0, solWithUsd(lamports, solPriceUsd), esc), fetchFn)) {
+      await env.DB.prepare("UPDATE guards SET last_claim_notice_at = ? WHERE wallet = ?").bind(now, g.wallet).run();
+    }
+  }
+}
+
 /** The cron: make sure the webhook is set, send renewal notices, then re-scan the guards whose turn it is. */
 export async function runGuards(env: GuardEnv, now: number, fetchFn: typeof fetch = (i, o) => fetch(i, o)): Promise<{ checked: number; alerted: number }> {
   if (env.TELEGRAM_BOT_TOKEN && env.PUBLIC_URL) {
@@ -234,7 +262,8 @@ export async function runGuards(env: GuardEnv, now: number, fetchFn: typeof fetc
   let checked = 0, alerted = 0;
   for (const g of due) {
     try {
-      const next = watchState(await fetchScanInput(rpc, g.wallet));
+      const input = await fetchScanInput(rpc, g.wallet);
+      const next = watchState(input);
       const prev: WatchState | null = g.baseline ? JSON.parse(g.baseline) : null;
       const alerts = prev ? diffWatch(prev, next, g.wallet) : [];
       let sent = false;
@@ -246,6 +275,7 @@ export async function runGuards(env: GuardEnv, now: number, fetchFn: typeof fetc
       await env.DB.prepare("UPDATE guards SET baseline = ?, last_check_at = ?, checks = checks + 1, alerts = alerts + ?, last_alert_at = CASE WHEN ? THEN ? ELSE last_alert_at END, last_error = NULL WHERE wallet = ?")
         .bind(alerts.length && !sent ? g.baseline : JSON.stringify(next), now, sent ? alerts.length : 0, sent ? 1 : 0, now, g.wallet).run();
       checked++;
+      try { await sendDigests(env, g, next, input.solPriceUsd ?? null, sent ? alerts.length : 0, now, fetchFn); } catch (e) { console.error("digests", e); }
     } catch (e: any) {
       await env.DB.prepare("UPDATE guards SET last_check_at = ?, last_error = ? WHERE wallet = ?").bind(now, String(e?.message ?? e).slice(0, 200), g.wallet).run();
     }
