@@ -28,6 +28,14 @@ let lastMember = false;
 export function isGuardMember(): boolean {
   return Boolean(connected && token && status?.active && status.wallet === connected.address);
 }
+/** Sign out: forget this browser's SealGuard sign-in (the wallet itself is disconnected by main.ts). */
+export function forgetGuardSession(): void {
+  if (connected) saveToken(connected.address, null);
+  try { localStorage.removeItem(TOKEN_KEY); } catch { /* private mode */ }
+  token = null;
+  status = null;
+}
+
 /** main.ts re-prices the report when membership changes. */
 export function onGuardChange(cb: () => void): void {
   listeners.push(cb);

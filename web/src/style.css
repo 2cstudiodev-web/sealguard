@@ -38,7 +38,13 @@ main{max-width:1160px;margin:0 auto;padding:0 20px 40px}
 .btn:hover{border-color:var(--faint)}
 .btn.primary{background:var(--acc);color:var(--acc-ink);border-color:var(--acc)}
 .btn.primary:hover{filter:brightness(1.08)}
-.btn.white{background:#fff;color:#0a0a0a;border-color:#fff;margin-left:6px}
+.btn.white{background:#fff;color:#0a0a0a;border-color:#fff}
+.navacct{position:relative;margin-left:6px}
+.navmenu{position:absolute;right:0;top:calc(100% + 8px);min-width:180px;background:var(--panel);border:1px solid var(--line2);border-radius:12px;padding:6px;box-shadow:0 20px 50px rgba(0,0,0,.6);z-index:40}
+.navmenu[hidden]{display:none}
+.menuitem{display:block;width:100%;text-align:left;background:none;border:0;color:var(--fg);font:500 14px var(--body);padding:9px 12px;border-radius:8px;cursor:pointer}
+.menuitem:hover{background:var(--panel2)}
+#disconnect{color:var(--bad)}
 .btn.ghost{background:transparent}
 .btn.big{padding:13px 24px;font-size:16px;border-radius:12px}
 .btn.small{padding:7px 13px;font-size:13px;border-radius:9px}
@@ -80,6 +86,7 @@ main{max-width:1160px;margin:0 auto;padding:0 20px 40px}
 .hc-score b{display:block;font-family:var(--display)}
 .hc-score span{font-size:13px;color:var(--dim)}
 .ring{width:54px;height:54px;border-radius:50%;display:grid;place-items:center;background:conic-gradient(var(--acc) 0 95%,var(--line2) 95% 100%);flex:none}
+.ring.r82{background:conic-gradient(var(--acc) 0 82%,var(--line2) 82% 100%)}
 .ring span{width:44px;height:44px;border-radius:50%;background:var(--bg2);display:grid;place-items:center;font:800 18px var(--display);color:var(--acc)}
 .hc-row{display:flex;align-items:center;gap:12px;padding:10px 4px;border-top:1px solid var(--line)}
 .tk{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:14px;flex:none}
@@ -183,7 +190,7 @@ main{max-width:1160px;margin:0 auto;padding:0 20px 40px}
 }
 @media (max-width:700px){
   .links{display:none}
-  .btn.white{margin-left:auto}
+  .navacct{margin-left:auto}
   .hero h1{font-size:38px}
   .lead{font-size:16px}
   .facts{grid-template-columns:1fr 1fr}

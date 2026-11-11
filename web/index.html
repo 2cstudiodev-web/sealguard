@@ -25,7 +25,10 @@
   <div class="navin">
     <a class="brand" href="/"><img src="/mark.svg" alt="" width="30" height="30"><span>SealGuard</span></a>
     <nav class="links"><a href="#how">How it works</a><a href="#plans">Guard</a><a href="#hardware">Hardware wallets</a></nav>
-    <button id="navconnect" class="btn white">Connect wallet</button>
+    <div class="navacct">
+      <button id="navconnect" class="btn white">Connect wallet</button>
+      <div id="navmenu" class="navmenu" hidden><button id="navscan" class="menuitem" type="button">Scan again</button><button id="disconnect" class="menuitem" type="button">Disconnect</button></div>
+    </div>
   </div>
   <div class="searchin">
     <form id="addrform" class="search"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M20 20l-3.5-3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><input id="addrinput" type="text" placeholder="Scan any Solana wallet address, read-only" spellcheck="false" autocomplete="off"><button class="btn small" type="submit">Scan</button></form>
@@ -39,22 +42,22 @@
     <h1>Who can move your <span class="hl">Solana tokens?</span></h1>
     <p class="lead">A free 30-second check-up of your wallet: approvals other addresses still hold, Token-2022 tricks, phishing airdrops, stray nonce and stake authorities, and whether the wallet account itself has been tampered with. Anything that can be fixed, you fix with one signature in your own wallet.</p>
     <div id="connect">
-      <div class="ctas"><button id="connectbtn" class="btn primary big">Connect wallet</button><a class="btn ghost big" href="#how">How it works</a></div>
+      <div class="ctas"><a class="btn ghost big" href="#how">How it works</a></div>
       <p class="small muted">Connecting only reads your public address. SealGuard never asks for a seed phrase, never holds a key and never signs anything for you.</p>
     </div>
     <div id="session" hidden>
       <p class="addr">Wallet <code id="addr"></code> <span id="mode" class="small muted"></span></p>
-      <div class="ctas"><button id="scanbtn" class="btn small">Scan again</button><button id="disconnect" class="btn ghost small">Close</button></div>
+      <div class="ctas"><button id="scanbtn" class="btn small">Scan again</button></div>
     </div>
     <p id="status" class="status"></p>
   </div>
 
   <div class="herocard" aria-hidden="true">
-    <div class="hc-head"><b>Wallet check-up</b><span class="chip"><i class="dot"></i>Solana</span></div>
-    <div class="hc-score"><div class="ring"><span>95</span></div><div><b>Looks good</b><span>2 things to fix, 0.0325 SOL to claim back</span></div></div>
-    <div class="hc-row"><span class="tk usdc">$</span><span class="hc-t">USDC<small>Approval to 9xQe…VFin</small></span><span class="hc-b">Revoke</span></div>
-    <div class="hc-row"><span class="tk warn">!</span><span class="hc-t">jupfinally.com Airdrop<small>Phishing token</small></span><span class="hc-b">Burn</span></div>
-    <div class="hc-row"><span class="tk sol">◎</span><span class="hc-t">16 empty accounts<small>0.0325 SOL rent</small></span><span class="hc-b go">Claim</span></div>
+    <div class="hc-head"><b>Example report</b><span class="chip"><i class="dot"></i>Solana</span></div>
+    <div class="hc-score"><div class="ring r82"><span>82</span></div><div><b>A few things to fix</b><span>3 things to fix, 0.12 SOL to claim back</span></div></div>
+    <div class="hc-row"><span class="tk usdc">$</span><span class="hc-t">USDC<small>Approval to an unknown address</small></span><span class="hc-b">Revoke</span></div>
+    <div class="hc-row"><span class="tk warn">!</span><span class="hc-t">claim-rewards.example Airdrop<small>Phishing token</small></span><span class="hc-b">Burn</span></div>
+    <div class="hc-row"><span class="tk sol">◎</span><span class="hc-t">58 empty accounts<small>0.12 SOL rent</small></span><span class="hc-b go">Claim</span></div>
     <div class="hc-row"><span class="tk seek">S</span><span class="hc-t">Seeker Genesis Token<small>Locked by design</small></span><span class="hc-b ok">OK</span></div>
   </div>
 </section>

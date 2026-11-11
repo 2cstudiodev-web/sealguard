@@ -5,7 +5,7 @@ import { fetchScanInput, rpc } from "./rpc";
 import { CLOSE_FEE_BPS, closeFee, scan, shortKey, solWithUsd, type Action, type Finding, type ScanInput, type ScanResult, type Severity } from "./scan";
 import { buildTransaction, describeAction, describeFee, groupFee, packActions, TXS_PER_APPROVAL } from "./tx";
 import { connect, disconnect, listWallets, onWalletsChange, registerMobile, signAndSendMany, type Connected } from "./wallet";
-import { isGuardMember, onGuardChange, setGuardWallet } from "./guard";
+import { forgetGuardSession, isGuardMember, onGuardChange, setGuardWallet } from "./guard";
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector(sel) as T;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
@@ -65,9 +65,10 @@ function showSession(): void {
   $("#navconnect").textContent = connected ? shortKey(connected.address) : "Connect wallet";
 }
 
-/** The Connect button in the nav: opens the wallet list (or, once connected, goes back to the top of the page). */
-function navConnect(): void {
-  if (connected) { window.scrollTo({ top: 0, behavior: "smooth" }); return; }
+/** The one Connect button, top right: opens the wallet list; once connected it shows the address and a small menu. */
+function navConnect(e: Event): void {
+  e.stopPropagation();
+  if (connected) { $("#navmenu").hidden = !$("#navmenu").hidden; return; }
   openWalletPicker();
 }
 
@@ -110,6 +111,8 @@ function doScanAddress(ev: Event): void {
 }
 
 async function doDisconnect(): Promise<void> {
+  $("#navmenu").hidden = true;
+  forgetGuardSession();
   if (connected) await disconnect(connected);
   void setGuardWallet(null);
   connected = null; address = null; result = null; lastInput = null; selected = new Set();
@@ -372,7 +375,6 @@ onGuardChange(() => {
 });
 if (pendingFix) setStatus("Connect the wallet this message was about to see the fix.");
 onWalletsChange(renderWallets);
-$("#connectbtn").addEventListener("click", openWalletPicker);
 $("#navconnect").addEventListener("click", navConnect);
 $("#pickclose").addEventListener("click", closeWalletPicker);
 $("#walletpick").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeWalletPicker(); });
@@ -380,6 +382,8 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeWalle
 $("#addrform").addEventListener("submit", doScanAddress);
 $("#scanbtn").addEventListener("click", doScan);
 $("#disconnect").addEventListener("click", doDisconnect);
+$("#navscan").addEventListener("click", () => { $("#navmenu").hidden = true; void doScan(); });
+document.addEventListener("click", (e) => { if (!$("#navmenu").hidden && !(e.target as HTMLElement).closest(".navacct")) $("#navmenu").hidden = true; });
 $("#fixbtn").addEventListener("click", doFix);
 $("#burnack").addEventListener("change", syncFixButton);
 $("#fixtoggle").addEventListener("click", () => {
