@@ -409,7 +409,20 @@ async function doFix(): Promise<void> {
           log.innerHTML += `<li class="err">Not sent (${g.length} action${g.length === 1 ? "" : "s"}): ${esc(res.error)}</li>`;
         }
       });
-      if (results.length < chunk.length || results.every((x) => !x.ok)) break;
+      // A wallet can hand back fewer results than transactions it was given: those weren't sent, so say so.
+      for (let k = results.length; k < chunk.length; k++) {
+        failed++;
+        log.innerHTML += `<li class="err">Not sent (${chunk[k].length} action${chunk[k].length === 1 ? "" : "s"}): the wallet didn't return this transaction.</li>`;
+      }
+      if (results.length < chunk.length || results.every((x) => !x.ok)) {
+        const rest = groups.slice((r + 1) * TXS_PER_APPROVAL);
+        if (rest.length) {
+          failed += rest.length;
+          const n = rest.reduce((sum, g) => sum + g.length, 0);
+          log.innerHTML += `<li class="err">Not sent: ${rest.length} more transaction${rest.length === 1 ? "" : "s"} (${n} action${n === 1 ? "" : "s"}) after the wallet stopped. Press Fix selected again to send them.</li>`;
+        }
+        break;
+      }
     }
     void reportStat("fix", { closes, lamports: closeLamports, fee: feeLamports });
     setStatus(failed ? `${sent} sent, ${failed} not sent. Rescanning…` : "Done. Rescanning…", failed ? "err" : "busy");
