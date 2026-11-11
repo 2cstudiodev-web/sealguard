@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to check and revoke token approvals on Solana · SealGuard</title>
+<meta name="description" content="An approval lets another address move tokens out of your wallet without asking again. How to find the ones still open on Solana, take them back in one signature, and spot the ones you can't revoke.">
+<link rel="canonical" href="https://guard.2cstudio.app/guides/revoke-token-approvals">
+<meta property="og:type" content="article">
+<meta property="og:title" content="How to check and revoke token approvals on Solana">
+<meta property="og:description" content="Find every address that can still move tokens out of your wallet, and take that right back in one signature.">
+<meta property="og:url" content="https://guard.2cstudio.app/guides/revoke-token-approvals">
+<meta property="og:image" content="https://guard.2cstudio.app/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/logo.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<style>
+  :root{--bg:#050608;--panel:#111419;--line:#22272f;--fg:#f4f6f8;--dim:#9aa3b2;--acc:#14f195;--ink:#04140c}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  main{max-width:760px;margin:0 auto;padding:0 18px 48px}
+  .top{display:flex;justify-content:space-between;align-items:center;max-width:760px;margin:0 auto;padding:16px 18px;font-size:14px}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:800;font-size:18px;color:var(--fg);text-decoration:none}
+  a{color:var(--acc)}
+  h1{font-size:32px;line-height:1.2;margin:18px 0 12px}
+  h2{font-size:20px;margin:34px 0 10px}
+  h3{font-size:16px;margin:18px 0 4px}
+  p,li{color:var(--dim)}
+  p{margin:0 0 12px}
+  ul,ol{padding-left:22px;margin:0 0 12px}
+  li{margin:0 0 6px}
+  b,strong{color:var(--fg)}
+  code{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:14px;color:var(--fg);word-break:break-word}
+  .lead{font-size:18px}
+  .cta{background:var(--panel);border:1px solid var(--acc);border-radius:16px;padding:18px 20px;margin:22px 0}
+  .cta p{margin:8px 0 0;font-size:14px}
+  .btn{display:inline-block;background:var(--acc);color:var(--ink);font-weight:700;text-decoration:none;border-radius:10px;padding:11px 20px}
+  .muted{color:var(--dim);font-size:14px}
+  footer{max-width:760px;margin:20px auto 0;padding:18px;border-top:1px solid var(--line);font-size:13px;color:var(--dim);text-align:center}
+  footer a{margin:0 8px}
+</style>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[
+{"@type":"Question","name":"What is a token approval on Solana?","acceptedAnswer":{"@type":"Answer","text":"An approval, called a delegate, lets another address move up to a set amount of one token out of your wallet without asking you again. It stays until it's used up or you revoke it."}},
+{"@type":"Question","name":"Does revoking a Solana token approval cost anything?","acceptedAnswer":{"@type":"Answer","text":"Only the Solana network fee, a fraction of a cent. SealGuard doesn't charge for revoking."}},
+{"@type":"Question","name":"Can every approval be revoked?","acceptedAnswer":{"@type":"Answer","text":"No. Some Token-2022 tokens have a permanent delegate set by the token's issuer, which can move or burn that token from any wallet and can't be revoked by holders."}},
+{"@type":"Question","name":"Is revoking enough if my seed phrase leaked?","acceptedAnswer":{"@type":"Answer","text":"No. Whoever has the seed phrase controls the wallet. Move what you can to a brand-new wallet."}}
+]}
+</script>
+<script src="https://pulse.2cstudio.app/v1/web.js" data-site="web-sealguard" defer></script>
+</head>
+<body>
+<header class="top"><a class="brand" href="/"><img src="/mark.svg" alt="" width="28" height="28"> SealGuard</a><span class="muted">by <a href="https://2cstudio.app">2C Studio</a></span></header>
+<main>
+<h1>How to check and revoke token approvals on Solana</h1>
+<p class="lead">On Solana, an approval (a "delegate") lets another address move up to a set amount of one token out of your wallet, without asking you again. Apps use them for orders and subscriptions. Drainers trick people into signing one, then wait. An approval stays until it's used up or you revoke it.</p>
+
+<div class="cta">
+  <a class="btn" href="/">Check my wallet's approvals</a>
+  <p>The scan is free, and revoking is free. Nothing is sent until you approve it in your wallet.</p>
+</div>
+
+<h2>What an open approval means</h2>
+<p>Each token account in your wallet can have one delegate with an allowance. If a site you no longer use, or an address you don't recognise, still has an allowance on your USDC, it can take that USDC at any time, up to the amount left, without another signature from you.</p>
+
+<h2>How to find them</h2>
+<p>Most wallets don't list approvals in one place. SealGuard reads every token account in your wallet, Token-2022 included, and lists each live approval with the address, the token and how much it can still move. Approvals that are already used up are shown as low risk.</p>
+
+<h2>How to revoke them</h2>
+<ol>
+  <li><b>Connect your wallet.</b> You can paste any address to look at it, but fixing needs the wallet connected.</li>
+  <li><b>Tick the approvals</b> you want to take back.</li>
+  <li><b>Press Fix selected</b> and approve the transaction in your wallet. Each revoke is a standard Token Program instruction, and your wallet shows it before you sign.</li>
+</ol>
+<p>Revoking is free apart from the Solana network fee. On the command line, <code>spl-token revoke &lt;TOKEN_ACCOUNT_ADDRESS&gt;</code> does the same for one account.</p>
+
+<h2>Approvals you can't revoke</h2>
+<p>Some Token-2022 tokens have a <b>permanent delegate</b> set by the token's issuer. It can move or burn that token from any wallet, and no holder can revoke it. Regulated stablecoins such as PYUSD use this for compliance. SealGuard flags it so you know. For an unknown token with no market price, it offers to burn the token and close its account. For tokens with a market price it doesn't: sell or swap them instead if you'd rather not hold them.</p>
+
+<h2>When revoking isn't enough</h2>
+<ul>
+  <li><b>A leaked seed phrase:</b> whoever has it controls the wallet. Move what you can to a brand-new wallet.</li>
+  <li><b>A signed transfer:</b> most Solana thefts are one signature on a transfer, not an approval. Read your wallet's simulation before every signature, and keep large amounts on a hardware wallet.</li>
+</ul>
+
+<h2>Know when a new one appears</h2>
+<p>With the <a href="/#plans">guard</a> (US$49 a year), SealGuard checks your wallet every hour and sends a Telegram message when something changes for the worse, such as a new approval, with a link that opens the fix.</p>
+
+<h2>Questions</h2>
+<h3>Will revoking break an app I use?</h3>
+<p>An app that relies on the approval, such as an open limit order, may stop working until you approve it again from that app.</p>
+<h3>Is it safe to connect my wallet?</h3>
+<p>Connecting shares only your public address. SealGuard never asks for a seed phrase, can't send anything without your signature, and its <a href="https://github.com/2cstudiodev-web/sealguard">code is public</a>.</p>
+<h3>What else does the scan find?</h3>
+<p>Phishing airdrops, stake and nonce authorities, whether the wallet account itself has been taken over, and empty accounts holding SOL you can take back. See <a href="/guides/close-empty-token-accounts">how to close empty token accounts</a>.</p>
+
+<div class="cta">
+  <a class="btn" href="/">Check my wallet's approvals</a>
+  <p>Free scan, results in about 30 seconds.</p>
+</div>
+</main>
+<footer><a href="/">SealGuard</a><a href="/guides/close-empty-token-accounts">Close empty token accounts</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a></footer>
+</body>
+</html>

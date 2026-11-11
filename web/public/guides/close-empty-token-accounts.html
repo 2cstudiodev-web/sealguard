@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Close empty Solana token accounts and get your SOL back · SealGuard</title>
+<meta name="description" content="Every token you've held left a token account with about 0.002 SOL of rent in it. Once it's empty you can close it and take that SOL back. How to do it, and which accounts to keep.">
+<link rel="canonical" href="https://guard.2cstudio.app/guides/close-empty-token-accounts">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Close empty Solana token accounts and get your SOL back">
+<meta property="og:description" content="Sold tokens leave empty accounts with about 0.002 SOL of rent in each. Close them and the SOL comes back to your wallet.">
+<meta property="og:url" content="https://guard.2cstudio.app/guides/close-empty-token-accounts">
+<meta property="og:image" content="https://guard.2cstudio.app/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/logo.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<style>
+  :root{--bg:#050608;--panel:#111419;--line:#22272f;--fg:#f4f6f8;--dim:#9aa3b2;--acc:#14f195;--ink:#04140c}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  main{max-width:760px;margin:0 auto;padding:0 18px 48px}
+  .top{display:flex;justify-content:space-between;align-items:center;max-width:760px;margin:0 auto;padding:16px 18px;font-size:14px}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:800;font-size:18px;color:var(--fg);text-decoration:none}
+  a{color:var(--acc)}
+  h1{font-size:32px;line-height:1.2;margin:18px 0 12px}
+  h2{font-size:20px;margin:34px 0 10px}
+  h3{font-size:16px;margin:18px 0 4px}
+  p,li{color:var(--dim)}
+  p{margin:0 0 12px}
+  ul,ol{padding-left:22px;margin:0 0 12px}
+  li{margin:0 0 6px}
+  b,strong{color:var(--fg)}
+  code{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:14px;color:var(--fg);word-break:break-word}
+  .lead{font-size:18px}
+  .cta{background:var(--panel);border:1px solid var(--acc);border-radius:16px;padding:18px 20px;margin:22px 0}
+  .cta p{margin:8px 0 0;font-size:14px}
+  .btn{display:inline-block;background:var(--acc);color:var(--ink);font-weight:700;text-decoration:none;border-radius:10px;padding:11px 20px}
+  .muted{color:var(--dim);font-size:14px}
+  footer{max-width:760px;margin:20px auto 0;padding:18px;border-top:1px solid var(--line);font-size:13px;color:var(--dim);text-align:center}
+  footer a{margin:0 8px}
+</style>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[
+{"@type":"Question","name":"How much SOL is in an empty token account?","acceptedAnswer":{"@type":"Answer","text":"A standard Solana token account holds 0.00203928 SOL of rent. Token-2022 accounts hold a little more, depending on the token's extensions. Closing an empty account returns all of it to your wallet."}},
+{"@type":"Question","name":"Does closing a token account lose any tokens?","acceptedAnswer":{"@type":"Answer","text":"No. Only an account with a zero balance can be closed, so no tokens or NFTs are touched."}},
+{"@type":"Question","name":"Can I receive the same token again after closing its account?","acceptedAnswer":{"@type":"Answer","text":"Yes. The next time you receive that token, a new account is opened and the rent is paid again."}},
+{"@type":"Question","name":"Can I close empty token accounts for free?","acceptedAnswer":{"@type":"Answer","text":"Yes, with the Solana command line: spl-token close --address <TOKEN_ACCOUNT_ADDRESS> closes one empty account. It needs your wallet's keypair file on that computer. SealGuard charges 5% of the rent returned, and nothing for wallets with the guard."}}
+]}
+</script>
+<script src="https://pulse.2cstudio.app/v1/web.js" data-site="web-sealguard" defer></script>
+</head>
+<body>
+<header class="top"><a class="brand" href="/"><img src="/mark.svg" alt="" width="28" height="28"> SealGuard</a><span class="muted">by <a href="https://2cstudio.app">2C Studio</a></span></header>
+<main>
+<h1>Close empty Solana token accounts and get your SOL back</h1>
+<p class="lead">Every token your wallet has held, from a pump.fun memecoin to an airdrop you never asked for, has its own token account. Opening one locks about 0.002 SOL as rent. When you sell or send the whole balance, the account stays open and empty, and the SOL stays locked in it. Close the account and the SOL comes back to your wallet.</p>
+
+<div class="cta">
+  <a class="btn" href="/">Check my wallet for empty accounts</a>
+  <p>The scan is free. Nothing is sent until you approve it in your wallet.</p>
+</div>
+
+<h2>How much SOL is locked</h2>
+<ul>
+  <li>A standard token account holds <b>0.00203928 SOL</b> of rent. Token-2022 accounts hold a little more, depending on the token's extensions.</li>
+  <li>Fifty sold memecoins come to about 0.1 SOL. Active traders often have hundreds of empty accounts.</li>
+  <li>Many wallets have none. In a sample of 300 active wallets SealGuard looked at in November 2026, most had no empty accounts, and among those that did, the middle amount was about 0.016 SOL.</li>
+</ul>
+
+<h2>Why the accounts stay open</h2>
+<p>Selling a token moves its balance out, but closing the account is a separate instruction. Most swap apps and launchpads don't close it for you, so empty accounts pile up with every token you trade.</p>
+
+<h2>Which empty accounts to keep</h2>
+<p>Closing can't cost you tokens: only an account with a zero balance can be closed. The only cost is paying the rent again if that token comes back. So SealGuard leaves these unticked and says why:</p>
+<ul>
+  <li><b>Tokens you'll likely receive again:</b> USDC, USDT, PYUSD, wrapped SOL, SKR, JUP, BONK, JitoSOL and mSOL.</li>
+  <li><b>Accounts used in the last 30 days,</b> when you may still be trading that token.</li>
+</ul>
+<p>Frozen accounts can't be closed until the token's issuer unfreezes them, so they're left out.</p>
+
+<h2>How to close them with SealGuard</h2>
+<ol>
+  <li><b>Connect your wallet.</b> SealGuard lists every empty account with the token's name and the SOL inside.</li>
+  <li><b>Untick any you want to keep.</b> The suggested ones are already ticked.</li>
+  <li><b>Press Fix selected.</b> Many accounts fit in one transaction, and your wallet shows exactly what each one does before you sign.</li>
+</ol>
+<p><b>Fee:</b> 5% of the rent returned, as the last transfer in the same transaction, so you see it before you sign. Wallets with the <a href="/#plans">guard</a> (US$49 a year) pay no fee. Network fees go to Solana, not to SealGuard.</p>
+
+<h2>Doing it yourself for free</h2>
+<p>If you use the Solana command line, <code>spl-token close --address &lt;TOKEN_ACCOUNT_ADDRESS&gt;</code> closes one empty account, and <code>spl-token gc</code> closes unneeded accounts in bulk. Run <code>spl-token gc --help</code> first to see what your version will do. Both need your wallet's keypair file on that computer, which is why most people use a wallet app instead.</p>
+
+<h2>Questions</h2>
+<h3>Can I receive the same token again after closing its account?</h3>
+<p>Yes. The next time that token arrives, a new account is opened and the rent is paid again.</p>
+<h3>Does closing an account touch my tokens or NFTs?</h3>
+<p>No. Only accounts with a zero balance can be closed. Your holdings stay where they are.</p>
+<h3>Is it safe to connect my wallet?</h3>
+<p>Connecting shares only your public address. SealGuard never asks for a seed phrase, can't send anything without your signature, and its <a href="https://github.com/2cstudiodev-web/sealguard">code is public</a>.</p>
+<h3>What else does the scan check?</h3>
+<p>Token approvals, phishing airdrops, Token-2022 permanent delegates, stake and nonce authorities, and whether the wallet account itself has been taken over. See <a href="/guides/revoke-token-approvals">how to check and revoke token approvals</a>.</p>
+
+<div class="cta">
+  <a class="btn" href="/">Check my wallet for empty accounts</a>
+  <p>Free scan, results in about 30 seconds.</p>
+</div>
+</main>
+<footer><a href="/">SealGuard</a><a href="/guides/revoke-token-approvals">Revoke token approvals</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a></footer>
+</body>
+</html>
