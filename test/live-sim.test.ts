@@ -24,6 +24,17 @@ describe.skipIf(!url || !wallet)("live close simulation", () => {
       lines.push(`batch of ${g.length}: fee ${groupFee(g)} lamports, ${tx.instructions.length} instructions, size ${tx.serialize({ requireAllSignatures: false, verifySignatures: false }).length} bytes, err ${JSON.stringify(sim?.value?.err)}, units ${sim?.value?.unitsConsumed}`);
       expect(sim?.value?.err).toBeNull();
     }
+    // pump.fun deposits: what the scan says, and whether closing the ones it offers simulates cleanly.
+    const pumpFindings = r.findings.filter((f) => f.check === "pumpDeposit");
+    for (const f of pumpFindings) lines.push(`pump: ${f.title} | can close: ${Boolean(f.action)} | ${f.detail}`);
+    const pumpActions = pumpFindings.filter((f) => f.action).map((f) => f.action!) as Action[];
+    if (pumpActions.length) {
+      const bh = await rpc<any>("getLatestBlockhash", [{ commitment: "confirmed" }]);
+      const tx = buildTransaction(pumpActions, owner, bh.value.blockhash, bh.value.lastValidBlockHeight);
+      const sim = await rpc<any>("simulateTransaction", [tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64"), { encoding: "base64", sigVerify: false, replaceRecentBlockhash: true }]);
+      lines.push(`pump close: fee ${groupFee(pumpActions)} lamports, ${tx.instructions.length} instructions, err ${JSON.stringify(sim?.value?.err)}`);
+      expect(sim?.value?.err).toBeNull();
+    }
     const out = process.env.LIVE_OUT;
     if (out) (await import("node:fs")).writeFileSync(out, lines.join("\n") + "\n");
   }, 120_000);

@@ -1,7 +1,10 @@
 // Turning findings' actions into transactions. The wallet signs them; SealGuard never holds a key.
 import { PublicKey, SystemProgram, Transaction, TransactionInstruction } from "@solana/web3.js";
 import { createBurnInstruction, createCloseAccountInstruction, createRevokeInstruction, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
-import { CLOSE_FEE_BPS, closeFee, type Action, type TokenProgram } from "./scan";
+import { CLOSE_FEE_BPS, closeFee, PUMP_PROGRAMS, rentOf, type Action, type TokenProgram } from "./scan";
+
+/** Anchor discriminator of close_user_volume_accumulator (pump and pump_amm IDLs). */
+const CLOSE_PUMP_ACCUMULATOR = new Uint8Array([249, 69, 164, 218, 150, 103, 84, 138]);
 
 /** 2C Studio's treasury, where the close fee goes (the same wallet the guard subscription is paid to). */
 export const TREASURY = new PublicKey("B3BCTvv1LUpXZ2PpB4HeppxuSsS8Y1GSjYYG6NB6xTUA");
@@ -63,12 +66,27 @@ export function instructionsFor(a: Action, owner: PublicKey): TransactionInstruc
       ];
     case "withdrawNonce":
       return [SystemProgram.nonceWithdraw({ noncePubkey: new PublicKey(a.nonceAccount), authorizedPubkey: owner, toPubkey: owner, lamports: a.lamports })];
+    case "closePump": {
+      // close_user_volume_accumulator: the user signs and receives every lamport in the account.
+      const program = new PublicKey(PUMP_PROGRAMS[a.program].id);
+      const [eventAuthority] = PublicKey.findProgramAddressSync([new TextEncoder().encode("__event_authority")], program);
+      return [new TransactionInstruction({
+        programId: program,
+        data: Buffer.from(CLOSE_PUMP_ACCUMULATOR),
+        keys: [
+          { pubkey: owner, isSigner: true, isWritable: true },
+          { pubkey: new PublicKey(a.account), isSigner: false, isWritable: true },
+          { pubkey: eventAuthority, isSigner: false, isWritable: false },
+          { pubkey: program, isSigner: false, isWritable: false },
+        ],
+      })];
+    }
   }
 }
 
 /** The fee for the empty-account closes in a group: 5% of the rent they return. Other actions are free. */
 export function groupFee(group: Action[], bps: number = CLOSE_FEE_BPS): number {
-  return closeFee(group.reduce((sum, a) => sum + (a.kind === "close" ? a.lamports : 0), 0), bps);
+  return closeFee(group.reduce((sum, a) => sum + rentOf(a), 0), bps);
 }
 
 /**
@@ -95,5 +113,6 @@ export function describeAction(a: Action): string {
     case "close": return `Close empty token account ${a.tokenAccount} and return its rent to you`;
     case "burnClose": return `Burn ${a.amount.toString()} base units of ${a.mint} and close its account`;
     case "withdrawNonce": return `Withdraw nonce account ${a.nonceAccount} (${a.lamports} lamports) to you`;
+    case "closePump": return `Close your ${PUMP_PROGRAMS[a.program].name} volume account ${a.account} and return its ${a.lamports} lamports to you`;
   }
 }

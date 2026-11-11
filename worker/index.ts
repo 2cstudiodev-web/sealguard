@@ -2,6 +2,7 @@
 // provider so the API key never reaches the browser, and runs the guard (sign-in, Telegram link, payment,
 // cron re-scans). Nothing here signs anything.
 import { handleApi, runGuards, type GuardEnv } from "./guard";
+import { handleMcp } from "./mcp";
 
 export interface Env extends GuardEnv {
   ASSETS: Fetcher;
@@ -61,6 +62,8 @@ export default {
       const text = await upstream.text();
       return new Response(text, { status: upstream.ok ? 200 : 502, headers: { "content-type": "application/json", "cache-control": "no-store" } });
     }
+    // Read-only MCP server for AI apps (worker/mcp.ts).
+    if (url.pathname === "/mcp") return handleMcp(request, env, now);
     if (url.pathname.startsWith("/api/")) {
       const r = await handleApi(request, env, url.pathname, now);
       if (r) return r;

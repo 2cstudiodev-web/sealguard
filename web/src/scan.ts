@@ -50,6 +50,19 @@ export type AssetMeta = {
 export type StakeAcct = { address: string; staker: string; withdrawer: string; lamports: number };
 export type NonceAcct = { address: string; authority: string; lamports: number };
 
+/** The pump.fun programs that keep a per-wallet "user volume accumulator" account (with a rent deposit). */
+export type PumpProgram = "pump" | "pumpswap";
+export const PUMP_PROGRAMS: Record<PumpProgram, { id: string; name: string }> = {
+  pump: { id: "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P", name: "pump.fun" },
+  pumpswap: { id: "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA", name: "PumpSwap" },
+};
+/**
+ * A pump.fun volume account: opened for the wallet on its first trade, holding a rent deposit plus any SOL cashback
+ * not yet claimed. `unclaimedTokens`/`needsClaim` are PUMP rewards; `heldTokens` counts token accounts the PDA owns
+ * with a balance (USDC cashback): closing the PDA would strand those, so those cases are left to pump.fun.
+ */
+export type PumpAcct = { program: PumpProgram; address: string; lamports: number; rent: number; unclaimedTokens: bigint; needsClaim: boolean; heldTokens: number };
+
 export type ScanInput = {
   wallet: string;
   /** Owner program of the wallet account itself; anything but the System Program means the wallet is lost. */
@@ -63,6 +76,8 @@ export type ScanInput = {
   warnings?: string[];
   /** USD per SOL from the price feed, for the "≈ US$" next to every amount. */
   solPriceUsd?: number | null;
+  /** pump.fun volume accounts (deposits that can be taken back). */
+  pump?: PumpAcct[];
 };
 
 export type Severity = "critical" | "high" | "medium" | "low" | "ok";
@@ -77,13 +92,21 @@ export type CheckId =
   | "empty"
   | "phishing"
   | "stake"
-  | "nonce";
+  | "nonce"
+  | "pumpDeposit";
 
 export type Action =
   | { kind: "revoke"; tokenAccount: string; mint: string; program: TokenProgram }
   | { kind: "close"; tokenAccount: string; mint: string; program: TokenProgram; lamports: number }
   | { kind: "burnClose"; tokenAccount: string; mint: string; program: TokenProgram; amount: bigint }
-  | { kind: "withdrawNonce"; nonceAccount: string; lamports: number };
+  | { kind: "withdrawNonce"; nonceAccount: string; lamports: number }
+  /** Closes a pump.fun volume account: all `lamports` come back; the fee is charged on `rent` only, not on cashback. */
+  | { kind: "closePump"; program: PumpProgram; account: string; lamports: number; rent: number };
+
+/** The rent deposit an action returns (what the close fee is charged on); 0 for actions that return none. */
+export function rentOf(a: Action): number {
+  return a.kind === "close" ? a.lamports : a.kind === "closePump" ? a.rent : 0;
+}
 
 export type Finding = {
   check: CheckId;
@@ -398,6 +421,23 @@ export function scan(input: ScanInput, opts: ScanOptions = {}): ScanResult {
       detail: `Nonce accounts let a transaction be signed now and sent much later. Developers use them on purpose; drainers use them to replay a transfer after you think you're safe. If you didn't create it, withdraw it, which also takes back its ${solWithUsd(n.lamports, solPrice)}.`,
       accounts: [n.address],
       action: { kind: "withdrawNonce", nonceAccount: n.address, lamports: n.lamports },
+    });
+  }
+
+  // 10. pump.fun volume accounts: a deposit the wallet can take back, once nothing in them is left to claim.
+  for (const p of input.pump ?? []) {
+    const name = PUMP_PROGRAMS[p.program].name;
+    const cashback = Math.max(0, p.lamports - p.rent);
+    const pending = p.unclaimedTokens > 0n || p.needsClaim || p.heldTokens > 0;
+    f.push({
+      check: "pumpDeposit", severity: "ok",
+      title: pending ? `${name} deposit to take back once you claim your rewards: ${solWithUsd(p.lamports, solPrice)}` : `${name} deposit you can take back: ${solWithUsd(p.lamports, solPrice)}`,
+      detail: pending
+        ? `${name} opened this account for your wallet on your first trade there and holds ${solWithUsd(p.lamports, solPrice)} in it. It also holds ${name} rewards or cashback you haven't claimed yet. Claim them on pump.fun first; after that SealGuard can close the account and return the deposit.`
+        : `${name} opened this account for your wallet on your first trade there and holds ${solWithUsd(p.lamports, solPrice)} in it${cashback ? `, including ${solWithUsd(cashback, solPrice)} of SOL cashback you haven't claimed` : ""}. Closing it returns all of it to you${feeBps ? `, less SealGuard's ${feeBps / 100}% fee on the deposit` : ""}. Your next trade on ${name} opens it again and takes the deposit again.`,
+      accounts: [p.address],
+      action: pending ? undefined : { kind: "closePump", program: p.program, account: p.address, lamports: p.lamports, rent: Math.min(p.rent, p.lamports) },
+      keep: pending ? undefined : `If you still trade on ${name}, your next trade opens it again and takes the deposit again.`,
     });
   }
 

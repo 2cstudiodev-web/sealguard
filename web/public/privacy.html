@@ -31,7 +31,7 @@
 <p class="muted">Last updated 11 November 2026. Questions: support@2cstudio.app.</p>
 
 <h2>Scanning</h2>
-<p>When you scan a wallet, its public address is sent to our server and on to our Solana data provider (Helius) to read the chain. We don't keep a record of which addresses were scanned.</p>
+<p>When you scan a wallet, its public address is sent to our server and on to our Solana data provider (Helius) to read the chain. We don't keep a record of which addresses were scanned. The same goes for checks made by AI apps through SealGuard's MCP server; for its rate limit we count calls per connection under a one-way hash of the IP address, kept for up to two days.</p>
 
 <h2>Signing in and the guard</h2>
 <p>If you sign in to set up the guard, we store your wallet address, your Telegram chat id once you link it, a summary of the wallet's last check (approvals, nonce and stake authorities, flagged tokens), and your payments (transaction signature, token, amount, date). We use them only to run the guard and keep payment records. Your browser keeps a sign-in token in local storage; there are no tracking cookies.</p>

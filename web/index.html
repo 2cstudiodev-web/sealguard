@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SealGuard: check your Solana wallet for approvals, phishing tokens and tampering · 2C Studio</title>
-<meta name="description" content="Free Solana wallet check-up. See who can move your tokens, revoke approvals, burn phishing airdrops, close empty accounts and get your rent back. Read-only scan; every transaction is signed in your own wallet. Open source.">
+<title>SealGuard: find the SOL hiding in your Solana wallet and take it back · 2C Studio</title>
+<meta name="description" content="Free Solana wallet scan. Find the SOL locked in empty token accounts and pump.fun deposits and take it back, and see who can still move your tokens. Read-only; every transaction is signed in your own wallet. Open source.">
 <link rel="canonical" href="https://guard.2cstudio.app/">
-<meta property="og:title" content="SealGuard: a free Solana wallet check-up">
-<meta property="og:description" content="Who can move your tokens? Revoke approvals, burn phishing tokens, close empty accounts. Signed in your own wallet; open source.">
+<meta property="og:title" content="SealGuard: find the SOL hiding in your Solana wallet">
+<meta property="og:description" content="Take back SOL locked in empty token accounts and pump.fun deposits, and check who can move your tokens. Signed in your own wallet; open source.">
 <meta property="og:url" content="https://guard.2cstudio.app/">
 <meta property="og:image" content="https://guard.2cstudio.app/og.png">
 <link rel="icon" href="/logo.svg" type="image/svg+xml">
@@ -39,8 +39,8 @@
 <section class="hero">
   <div class="herotext">
     <p class="kicker">Free Solana wallet check-up</p>
-    <h1>Is your Solana wallet safe? <span class="hl">Check it in 30 seconds.</span></h1>
-    <p class="lead">SealGuard looks at your wallet and tells you, in plain words, who can still move your tokens, which tokens are scams, and how much SOL is stuck in empty accounts. Then you fix each one yourself, with one signature in your own wallet.</p>
+    <h1>Got SOL hiding in your wallet? <span class="hl">Find it in 30 seconds.</span></h1>
+    <p class="lead">Every token you trade can leave a little SOL locked in an empty account, and pump.fun keeps a deposit too. SealGuard finds it and gives it back, and while it looks, it checks who can still move your tokens and which tokens are scams. You approve every fix in your own wallet.</p>
     <div id="connect">
       <div class="ctas"><a class="btn ghost big" href="#steps">How it works</a></div>
       <p class="small muted">Connecting only reads your public address. SealGuard never asks for a seed phrase, never holds a key and never signs anything for you.</p>
@@ -157,7 +157,7 @@
 <footer class="foot">
   <div class="footin">
     <div><a class="brand" href="/"><img src="/mark.svg" alt="" width="26" height="26"><span>SealGuard</span></a><p class="small muted">Made by <a href="https://2cstudio.app">2C Studio</a> · support@2cstudio.app</p></div>
-    <div class="footlinks"><a href="/guides/close-empty-token-accounts">Close empty token accounts</a><a href="/guides/revoke-token-approvals">Revoke token approvals</a><a href="https://github.com/2cstudiodev-web/sealguard">Source code (MIT)</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="https://sealdraw.2cstudio.app">SealDraw</a></div>
+    <div class="footlinks"><a href="/guides/close-empty-token-accounts">Close empty token accounts</a><a href="/guides/revoke-token-approvals">Revoke token approvals</a><a href="/docs/mcp">MCP for AI apps</a><a href="https://github.com/2cstudiodev-web/sealguard">Source code (MIT)</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="https://sealdraw.2cstudio.app">SealDraw</a></div>
   </div>
   <p class="small muted disclaimer">SealGuard reads public chain data and gives general information, not financial or security advice. You decide and sign every transaction yourself; SealGuard isn't responsible for what you choose to revoke, burn or close.</p>
 </footer>
@@ -188,6 +188,7 @@
       <button id="upskip" class="btn ghost" type="button">No thanks, fix now</button>
     </div>
     <p class="small muted">Paid once in USDC, SOL or SKR from this wallet. It doesn't renew by itself.</p>
+    <p class="small muted">Already have the guard? <button id="upsignin" class="linkbtn" type="button">Sign in</button> first and closing is free.</p>
   </div>
 </div>
 <script type="module" src="/src/polyfill.ts"></script>

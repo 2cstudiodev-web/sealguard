@@ -1,6 +1,7 @@
 // Reading everything scan() needs from the chain. Shared by the page (through the /rpc relay) and the Worker's
 // guard cron (straight to the RPC provider): the caller passes the function that makes one JSON-RPC call.
-import type { AssetMeta, MintInfo, NonceAcct, ScanInput, StakeAcct, TokenAcct } from "../web/src/scan";
+import { PublicKey } from "@solana/web3.js";
+import { PUMP_PROGRAMS, type AssetMeta, type MintInfo, type NonceAcct, type PumpAcct, type PumpProgram, type ScanInput, type StakeAcct, type TokenAcct } from "../web/src/scan";
 
 export const TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 export const TOKEN_2022_PROGRAM = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
@@ -105,6 +106,43 @@ async function programAccounts(rpc: RpcCall, program: string, filters: unknown[]
     }
     throw e;
   }
+}
+
+/** The wallet's pump.fun "user_volume_accumulator" accounts (PDA of ["user_volume_accumulator", wallet]), if any. */
+export function pumpAddress(program: PumpProgram, wallet: string): string {
+  return PublicKey.findProgramAddressSync([new TextEncoder().encode("user_volume_accumulator"), new PublicKey(wallet).toBytes()], new PublicKey(PUMP_PROGRAMS[program].id))[0].toBase58();
+}
+
+/** Account layout (pump IDL, UserVolumeAccumulator): 8-byte discriminator, user (32), needs_claim (bool), total_unclaimed_tokens (u64), … */
+export function parsePumpAccount(program: PumpProgram, address: string, wallet: string, a: any): Omit<PumpAcct, "heldTokens"> | null {
+  if (!a || a.owner !== PUMP_PROGRAMS[program].id) return null;
+  const raw = Array.isArray(a.data) ? a.data[0] : a.data;
+  const bytes = Uint8Array.from(atob(String(raw ?? "")), (c) => c.charCodeAt(0));
+  if (bytes.length < 49 || new PublicKey(bytes.slice(8, 40)).toBase58() !== wallet) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return {
+    program, address, lamports: Number(a.lamports ?? 0),
+    // Rent-exempt minimum for the account's size (the same formula the runtime uses: (size + 128) × 6960 lamports).
+    rent: (bytes.length + 128) * 6960,
+    needsClaim: bytes[40] === 1,
+    unclaimedTokens: view.getBigUint64(41, true),
+  };
+}
+
+async function pumpAccounts(rpc: RpcCall, wallet: string): Promise<PumpAcct[]> {
+  const programs = Object.keys(PUMP_PROGRAMS) as PumpProgram[];
+  const addrs = programs.map((p) => pumpAddress(p, wallet));
+  const r = await rpc<any>("getMultipleAccounts", [addrs, { encoding: "base64" }]);
+  const out: PumpAcct[] = [];
+  for (let i = 0; i < programs.length; i++) {
+    const p = parsePumpAccount(programs[i], addrs[i], wallet, r?.value?.[i]);
+    if (!p) continue;
+    // Cashback paid in a token (USDC) sits in token accounts the PDA owns; count the ones with a balance.
+    const [a, b] = await Promise.all([TOKEN_PROGRAM, TOKEN_2022_PROGRAM].map((programId) => rpc<any>("getTokenAccountsByOwner", [addrs[i], { programId }, { encoding: "jsonParsed" }])));
+    const held = [...(a?.value ?? []), ...(b?.value ?? [])].filter((x: any) => BigInt(x?.account?.data?.parsed?.info?.tokenAmount?.amount ?? "0") > 0n).length;
+    out.push({ ...p, heldTokens: held });
+  }
+  return out;
 }
 
 /** Everything scan() needs, in a handful of RPC calls. */
@@ -218,5 +256,13 @@ export async function fetchScanInput(rpc: RpcCall, wallet: string, onProgress: P
     warnings.push(`Nonce accounts couldn't be checked (${e?.message || e}).`);
   }
 
-  return { wallet, walletOwner, tokenAccounts, mints, assets, stakes, nonces, warnings, solPriceUsd };
+  onProgress("Checking pump.fun deposits");
+  let pump: PumpAcct[] = [];
+  try {
+    pump = await pumpAccounts(rpc, wallet);
+  } catch (e: any) {
+    warnings.push(`pump.fun deposits couldn't be checked (${e?.message || e}).`);
+  }
+
+  return { wallet, walletOwner, tokenAccounts, mints, assets, stakes, nonces, warnings, solPriceUsd, pump };
 }

@@ -2,7 +2,7 @@ import "./polyfill";
 import { Buffer } from "buffer";
 import { PublicKey } from "@solana/web3.js";
 import { fetchScanInput, rpc } from "./rpc";
-import { CLOSE_FEE_BPS, closeFee, scan, shortKey, solWithUsd, type Action, type Finding, type ScanInput, type ScanResult, type Severity } from "./scan";
+import { CLOSE_FEE_BPS, closeFee, rentOf, scan, shortKey, solWithUsd, type Action, type Finding, type ScanInput, type ScanResult, type Severity } from "./scan";
 import { buildTransaction, describeAction, describeFee, groupFee, packActions, TXS_PER_APPROVAL } from "./tx";
 import { connect, connectSilently, disconnect, listWallets, onWalletsChange, registerMobile, signAndSendMany, type Connected } from "./wallet";
 import { buyGuard, forgetGuardSession, guardOffered, guardPriceUsd, isGuardMember, onGuardChange, setGuardWallet } from "./guard";
@@ -310,6 +310,7 @@ function actionLabel(a: Action): string {
     case "close": return "Close the account and take the rent back";
     case "burnClose": return "Burn it and close the account";
     case "withdrawNonce": return "Withdraw the nonce account to my wallet";
+    case "closePump": return "Close it and take the SOL back";
   }
 }
 
@@ -325,7 +326,7 @@ function renderFixBar(): void {
   const bps = feeBps();
   const fee = acts.length && connected ? packActions(acts, new PublicKey(connected.address), { feeBps: bps }).reduce((sum, g) => sum + groupFee(g, bps), 0) : 0;
   list.innerHTML = acts.map((a) => `<li>${esc(describeAction(a))}</li>`).join("") + (fee ? `<li>${esc(describeFee(fee))}</li>` : "");
-  const closing = acts.filter((a) => a.kind === "close").reduce((sum, a) => sum + (a.kind === "close" ? a.lamports : 0), 0);
+  const closing = acts.reduce((sum, a) => sum + rentOf(a), 0);
   const price = result?.solPriceUsd ?? null;
   $("#fixfee").textContent = !closing ? "All selected fixes are free."
     : bps ? `Closing empty accounts returns ${solWithUsd(closing - closeFee(closing, bps), price)} to you after SealGuard's ${bps / 100}% fee (${solWithUsd(closeFee(closing, bps), price)}). Revoking and burning are free. Free for wallets with the guard.`
@@ -359,7 +360,7 @@ function onFixClick(): void {
 }
 function openUpsell(): void {
   const acts = [...selected].map((i) => result!.findings[i].action!).filter(Boolean);
-  const closing = acts.reduce((sum, a) => sum + (a.kind === "close" ? a.lamports : 0), 0);
+  const closing = acts.reduce((sum, a) => sum + rentOf(a), 0);
   const fee = closeFee(closing, CLOSE_FEE_BPS);
   const save = $("#upsave");
   save.hidden = !fee;
@@ -401,7 +402,7 @@ async function doFix(): Promise<void> {
         const g = chunk[k];
         if (res.ok) {
           sent++;
-          for (const a of g) if (a.kind === "close") { closes++; closeLamports += a.lamports; }
+          for (const a of g) if (rentOf(a)) { closes++; closeLamports += rentOf(a); }
           feeLamports += groupFee(g, bps);
           log.innerHTML += `<li>Sent <a href="https://solscan.io/tx/${res.signature}" target="_blank" rel="noopener">${res.signature.slice(0, 8)}…</a> (${g.length} action${g.length === 1 ? "" : "s"})</li>`;
         } else {
@@ -448,6 +449,12 @@ onGuardChange(() => {
   renderReport();
 });
 if (pendingFix) setStatus("Connect the wallet this message was about to see the fix.");
+// ?address=<wallet> (links from the MCP server and elsewhere): scan that address read-only straight away.
+const linkedAddress = params.get("address");
+if (linkedAddress && !pendingFix) {
+  $<HTMLInputElement>("#addrinput").value = linkedAddress;
+  doScanAddress(new Event("submit"));
+}
 onWalletsChange(() => { renderWallets(); void autoReconnect(); });
 void autoReconnect();
 $("#navconnect").addEventListener("click", navConnect);
@@ -464,6 +471,9 @@ $("#upclose").addEventListener("click", closeUpsell);
 $("#upsell").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeUpsell(); });
 $("#upskip").addEventListener("click", () => { closeUpsell(); void doFix(); });
 $("#uppay").addEventListener("click", () => { closeUpsell(); void buyGuard(); });
+// A member whose sign-in on this browser has lapsed (7 days, another device) signs in again; buyGuard only opens
+// the payment choices when the guard isn't active, and the fee drops once membership is known.
+$("#upsignin").addEventListener("click", () => { closeUpsell(); void buyGuard(); });
 $("#burnack").addEventListener("change", syncFixButton);
 $("#fixtoggle").addEventListener("click", () => {
   const list = $("#fixlist");

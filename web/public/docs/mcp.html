@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SealGuard MCP server: check Solana wallets from your AI app</title>
+<meta name="description" content="Add SealGuard to Claude, Cursor, VS Code or any MCP client and ask whether a Solana wallet is safe, which approvals are open and how much SOL its empty token accounts hold. Free, read-only, no sign-in.">
+<link rel="canonical" href="https://guard.2cstudio.app/docs/mcp">
+<meta property="og:type" content="article">
+<meta property="og:title" content="SealGuard MCP server: check Solana wallets from your AI app">
+<meta property="og:description" content="Free, read-only Solana wallet checks for Claude, Cursor, VS Code and other MCP clients.">
+<meta property="og:url" content="https://guard.2cstudio.app/docs/mcp">
+<meta property="og:image" content="https://guard.2cstudio.app/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/logo.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<style>
+  :root{--bg:#050608;--panel:#111419;--line:#22272f;--fg:#f4f6f8;--dim:#9aa3b2;--acc:#14f195;--ink:#04140c}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  main{max-width:760px;margin:0 auto;padding:0 18px 48px}
+  .top{display:flex;justify-content:space-between;align-items:center;max-width:760px;margin:0 auto;padding:16px 18px;font-size:14px}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:800;font-size:18px;color:var(--fg);text-decoration:none}
+  a{color:var(--acc)}
+  h1{font-size:32px;line-height:1.2;margin:18px 0 12px}
+  h2{font-size:20px;margin:34px 0 10px}
+  p,li{color:var(--dim)}
+  p{margin:0 0 12px}
+  ul,ol{padding-left:22px;margin:0 0 12px}
+  li{margin:0 0 6px}
+  b,strong{color:var(--fg)}
+  code{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:14px;color:var(--fg);word-break:break-word}
+  pre{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;overflow-x:auto;font-size:14px;color:var(--fg);margin:0 0 12px}
+  pre code{background:none;border:0;padding:0}
+  .lead{font-size:18px}
+  .url{background:var(--panel);border:1px solid var(--acc);border-radius:14px;padding:14px 18px;margin:18px 0;font-size:17px}
+  .muted{color:var(--dim);font-size:14px}
+  footer{max-width:760px;margin:20px auto 0;padding:18px;border-top:1px solid var(--line);font-size:13px;color:var(--dim);text-align:center}
+  footer a{margin:0 8px}
+</style>
+<script src="https://pulse.2cstudio.app/v1/web.js" data-site="web-sealguard" defer></script>
+</head>
+<body>
+<header class="top"><a class="brand" href="/"><img src="/mark.svg" alt="" width="28" height="28"> SealGuard</a><span class="muted">by <a href="https://2cstudio.app">2C Studio</a></span></header>
+<main>
+<h1>Check Solana wallets from your AI app</h1>
+<p class="lead">SealGuard's MCP server lets Claude, Cursor, VS Code and other AI apps run the same wallet check as this site. Ask "is this wallet safe?", "which approvals are still open?" or "how much SOL can I get back from empty accounts?" and get an answer from the chain.</p>
+
+<div class="url">Server URL: <code>https://guard.2cstudio.app/mcp</code></div>
+<p>Free, no sign-in and no API key. It's read-only: it never asks for a seed phrase and can't send a transaction. When something needs fixing, the answer includes a link to SealGuard, where the wallet's owner connects their wallet and approves each fix.</p>
+
+<h2>Add it to your AI app</h2>
+<p><b>Claude</b> (claude.ai and the desktop app): Settings → Connectors → Add custom connector, then paste the server URL.</p>
+<p><b>Claude Code:</b></p>
+<pre><code>claude mcp add --transport http sealguard https://guard.2cstudio.app/mcp</code></pre>
+<p><b>Cursor</b> (<code>~/.cursor/mcp.json</code>):</p>
+<pre><code>{ "mcpServers": { "sealguard": { "url": "https://guard.2cstudio.app/mcp" } } }</code></pre>
+<p><b>VS Code</b> (<code>.vscode/mcp.json</code>):</p>
+<pre><code>{ "servers": { "sealguard": { "type": "http", "url": "https://guard.2cstudio.app/mcp" } } }</code></pre>
+<p>Any other client that supports remote MCP servers over Streamable HTTP works the same way.</p>
+
+<h2>Tools</h2>
+<ul>
+  <li><b>scan_wallet:</b> a 0–100 safety score and everything found: open token approvals, phishing airdrops, Token-2022 permanent delegates and transfer restrictions, stake and nonce accounts someone else controls, and whether the wallet account itself has been taken over. Also totals the SOL in empty token accounts.</li>
+  <li><b>list_empty_token_accounts:</b> each empty token account, the SOL rent in it, and which ones SealGuard suggests closing. Accounts for tokens you'll likely receive again, or used in the last 30 days, are marked to keep, with the reason.</li>
+  <li><b>list_token_approvals:</b> every address that can still move tokens out of the wallet, and how much, plus permanent delegates that holders can't revoke.</li>
+</ul>
+
+<h2>Things to ask</h2>
+<ul>
+  <li>"Is wallet &lt;address&gt; safe? Explain anything risky in plain words."</li>
+  <li>"How much SOL can I get back from empty token accounts in &lt;address&gt;?"</li>
+  <li>"Does &lt;address&gt; have any token approvals I should revoke?"</li>
+</ul>
+
+<h2>Limits and privacy</h2>
+<p>Each check reads the wallet from the Solana network, so there are limits: 30 checks an hour from one connection, and a daily total across everyone. SealGuard doesn't store the addresses you check. It keeps a count of calls per connection, under a one-way hash, for up to two days, for the limit. Results are general information, not financial or security advice: see the <a href="/terms">terms</a>.</p>
+
+<h2>Fixing what it finds</h2>
+<p>Revoking approvals and burning phishing tokens are free. Closing empty token accounts costs 5% of the SOL returned, paid in the same transaction, and nothing for wallets with the <a href="/#plans">guard</a>. For the step-by-step guides, see <a href="/guides/close-empty-token-accounts">closing empty token accounts</a> and <a href="/guides/revoke-token-approvals">revoking token approvals</a>.</p>
+</main>
+<footer><a href="/">SealGuard</a><a href="https://github.com/2cstudiodev-web/sealguard">Source code</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a></footer>
+</body>
+</html>
