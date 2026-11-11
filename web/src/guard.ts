@@ -232,7 +232,11 @@ function openTelegram(webUrl: string, bot: string, code: string): void {
 function showLinkHelp(code: string): void {
   const box = $("#glinkhelp");
   const cmd = `/start ${code}`;
-  box.innerHTML = `<p>Telegram didn't open? In the Telegram app, open <b>@${esc(status?.botUsername ?? "seal_guard_bot")}</b> and send:</p>
+  const bot = status?.botUsername ?? "seal_guard_bot";
+  // Telegram Web takes the same deep link through `tgaddr`, so it opens the bot with the start code ready.
+  const web = `https://web.telegram.org/k/#?tgaddr=${encodeURIComponent(`tg://resolve?domain=${bot}&start=${code}`)}`;
+  box.innerHTML = `<p>Telegram didn't open? <a class="btn small" href="${esc(web)}" target="_blank" rel="noopener">Open in Telegram Web</a></p>
+<p>Or, in the Telegram app, open <b>@${esc(bot)}</b> and send:</p>
 <p class="cmdline"><code id="glinkcmd">${esc(cmd)}</code> <button id="glinkcopy" class="btn small" type="button">Copy</button></p>
 <p class="small muted">The code works for 30 minutes.</p>`;
   box.hidden = false;
