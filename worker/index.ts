@@ -40,7 +40,7 @@ export default {
       try { body = await request.json(); } catch { return json({ error: "Bad JSON" }, 400); }
       const bad = checkRequest(body);
       if (bad) return json({ jsonrpc: "2.0", id: body?.id ?? null, error: { code: -32601, message: bad } }, 400);
-      const upstream = await fetch(env.RPC_URL, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: body.id ?? 1, method: body.method, params: body.params }) });
+      const upstream = await fetch(env.RPC_URL, { method: "POST", headers: { "content-type": "application/json", "user-agent": "SealGuard/0.1 (+https://guard.2cstudio.app)" }, body: JSON.stringify({ jsonrpc: "2.0", id: body.id ?? 1, method: body.method, params: body.params }) });
       const text = await upstream.text();
       return new Response(text, { status: upstream.ok ? 200 : 502, headers: { "content-type": "application/json", "cache-control": "no-store" } });
     }

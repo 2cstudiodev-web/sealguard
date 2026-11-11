@@ -1,6 +1,5 @@
+import "./polyfill";
 import { Buffer } from "buffer";
-(globalThis as any).Buffer ??= Buffer;
-
 import { PublicKey } from "@solana/web3.js";
 import { fetchScanInput, rpc } from "./rpc";
 import { scan, shortKey, type Action, type Finding, type ScanResult, type Severity } from "./scan";
@@ -114,13 +113,61 @@ function renderReport(): void {
   $("#checked").textContent = `Looked at ${r.checked.tokenAccounts} token accounts, ${r.checked.mints} Token-2022 mints, ${r.checked.stakes} stake accounts and ${r.checked.nonces} nonce accounts.` + (r.warnings.length ? ` ${r.warnings.join(" ")}` : "");
 
   const list = $("#findings");
-  list.innerHTML = r.findings.map((f, i) => card(f, i)).join("");
+  list.innerHTML = groupFindings(r.findings).map((g) => (g.length === 1 ? card(r.findings[g[0]], g[0]) : groupCard(r.findings, g))).join("");
   list.querySelectorAll<HTMLInputElement>("input[type=checkbox]").forEach((cb) => cb.addEventListener("change", () => {
-    const i = Number(cb.dataset.i);
-    if (cb.checked) selected.add(i); else selected.delete(i);
+    const idx = String(cb.dataset.i).split(",").map(Number);
+    for (const i of idx) { if (cb.checked) selected.add(i); else selected.delete(i); }
     renderFixBar();
   }));
+  list.querySelectorAll<HTMLButtonElement>(".more").forEach((b) => b.addEventListener("click", () => {
+    const ul = b.nextElementSibling as HTMLElement;
+    ul.hidden = !ul.hidden;
+    b.textContent = ul.hidden ? b.dataset.show! : "Hide the list";
+  }));
   renderFixBar();
+}
+
+/** Findings of one check and severity are shown as one card once there are four or more (a whale wallet can have hundreds). */
+const GROUP_FROM = 4;
+function groupFindings(fs: Finding[]): number[][] {
+  const groups = new Map<string, number[]>();
+  fs.forEach((f, i) => {
+    const key = `${f.check}:${f.severity}`;
+    groups.get(key)?.push(i) ?? groups.set(key, [i]);
+  });
+  const out: number[][] = [];
+  const done = new Set<string>();
+  fs.forEach((f, i) => {
+    const key = `${f.check}:${f.severity}`;
+    const g = groups.get(key)!;
+    if (g.length < GROUP_FROM) { out.push([i]); return; }
+    if (!done.has(key)) { done.add(key); out.push(g); }
+  });
+  return out;
+}
+
+const GROUP_TITLE: Record<string, (n: number) => string> = {
+  frozen: (n) => `${n} of your token accounts are frozen by their issuers`,
+  empty: (n) => `${n} empty token accounts`,
+  permanentDelegate: (n) => `${n} tokens whose issuer can take them back`,
+  closeAuthority: (n) => `${n} token accounts someone else may close once empty`,
+  delegate: (n) => `${n} approvals on your token accounts`,
+  mintExtensions: (n) => `${n} tokens with restrictions built in`,
+  phishing: (n) => `${n} tokens that look like phishing airdrops`,
+  nonce: (n) => `${n} durable nonce accounts tied to your wallet`,
+  stake: (n) => `${n} stake accounts with someone else's authority`,
+};
+
+function groupCard(fs: Finding[], idx: number[]): string {
+  const first = fs[idx[0]];
+  const n = idx.length;
+  const withAction = idx.filter((i) => fs[i].action);
+  const items = idx.map((i) => `<li>${esc(fs[i].title)} · ${fs[i].accounts.map((a) => `<a href="${explorer(a)}" target="_blank" rel="noopener">${shortKey(a)}</a>`).join(" · ")}</li>`).join("");
+  const action = withAction.length
+    ? `<label class="act"><input type="checkbox" data-i="${withAction.join(",")}"${connected ? "" : " disabled"}> ${esc(actionLabel(fs[withAction[0]].action!))} (all ${withAction.length})</label>`
+    : "";
+  const show = `Show all ${n}`;
+  return `<div class="card sev-${first.severity}"><div class="sev">${SEV_LABEL[first.severity]}</div><h3>${esc((GROUP_TITLE[first.check] ?? ((k: number) => `${k} findings`))(n))}</h3><p>${esc(first.detail)}</p><button class="more linkbtn" data-show="${show}">${show}</button><ul class="grouplist small" hidden>${items}</ul>${action}</div>`;
 }
 
 function card(f: Finding, i: number): string {
