@@ -125,7 +125,7 @@ function render(): void {
   if (s.active) {
     lines.push(`<p class="okline">✅ Guard active until <b>${new Date(s.paidUntil!).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</b>. ${s.checks ? `Checked ${s.checks} time${s.checks === 1 ? "" : "s"}, ${s.alerts} alert${s.alerts === 1 ? "" : "s"} sent.` : s.telegramLinked ? "First check within the hour." : ""}</p>`);
     if (s.telegramLinked) {
-      lines.push(`<p>📨 Telegram linked. <button id="gtest" class="btn small" type="button">Send a test alert</button> <button id="gunlink" class="linkbtn">Unlink</button></p>`);
+      lines.push(`<p>📨 Telegram linked. <button id="gunlink" class="linkbtn">Unlink</button> · <button id="gtest" class="linkbtn" type="button">Send a test alert</button></p>`);
     } else if (s.botUsername) {
       lines.push(`<p>Step 2: <button id="glink" class="btn primary small">Link Telegram</button> <span class="small muted">opens the SealGuard bot; press Start there. Alerts start once it's linked.</span></p>`);
     } else {
