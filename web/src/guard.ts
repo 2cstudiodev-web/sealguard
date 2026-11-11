@@ -49,6 +49,7 @@ export async function setGuardWallet(c: Connected | null): Promise<void> {
   connected = c;
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   const card = $("#guard");
+  hideLinkHelp();
   if (!c) { card.hidden = true; token = null; status = null; return; }
   // The card only makes sense where the guard is configured (session secret set on the Worker).
   if (guardAvailable === null) {
@@ -121,16 +122,19 @@ async function signIn(): Promise<void> {
 
 async function linkTelegram(): Promise<void> {
   try {
-    const r = await api<{ url: string }>("/api/guard/link", {});
+    const r = await api<{ url: string; code: string; expiresAt: number }>("/api/guard/link", {});
     window.open(r.url, "_blank", "noopener");
     note("Press Start in Telegram. This page updates by itself once the bot has linked.", "busy");
-    const started = Date.now();
+    showLinkHelp(r.code);
+    if (pollTimer) clearInterval(pollTimer);
+    const until = r.expiresAt ?? Date.now() + 30 * 60_000;
     pollTimer = window.setInterval(async () => {
       try {
         status = await api<Status>("/api/guard");
-        if (status.telegramLinked || Date.now() - started > 3 * 60_000) {
+        if (status.telegramLinked || Date.now() > until) {
           clearInterval(pollTimer!); pollTimer = null;
-          note(status.telegramLinked ? "Telegram linked." : "", status.telegramLinked ? "ok" : "");
+          note(status.telegramLinked ? "Telegram linked." : "The link code has expired. Press Link Telegram for a new one.", status.telegramLinked ? "ok" : "");
+          if (status.telegramLinked) hideLinkHelp();
           render();
         }
       } catch { /* keep polling */ }
@@ -138,6 +142,34 @@ async function linkTelegram(): Promise<void> {
   } catch (e: any) {
     note(e?.message || "Couldn't start the link", "err");
   }
+}
+
+/** For when the t.me link doesn't open the Telegram app: the same /start command, to send by hand. */
+function showLinkHelp(code: string): void {
+  const box = $("#glinkhelp");
+  const cmd = `/start ${code}`;
+  box.innerHTML = `<p>Telegram didn't open? In the Telegram app, open <b>@${esc(status?.botUsername ?? "seal_guard_bot")}</b> and send:</p>
+<p class="cmdline"><code id="glinkcmd">${esc(cmd)}</code> <button id="glinkcopy" class="btn small" type="button">Copy</button></p>
+<p class="small muted">The code works for 30 minutes.</p>`;
+  box.hidden = false;
+  $("#glinkcopy").addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(cmd);
+      $("#glinkcopy").textContent = "Copied";
+    } catch {
+      const range = document.createRange();
+      range.selectNodeContents($("#glinkcmd"));
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+    }
+  });
+}
+
+function hideLinkHelp(): void {
+  const box = $("#glinkhelp");
+  box.hidden = true;
+  box.innerHTML = "";
 }
 
 async function unlinkTelegram(): Promise<void> {
