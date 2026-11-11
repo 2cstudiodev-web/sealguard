@@ -208,7 +208,7 @@ export function scan(input: ScanInput): ScanResult {
       if (odd.length && t.amount > 0n) {
         const words = odd.map((e) => (e === "transferHook" ? "a transfer hook (a program runs on every transfer and can block it)" : e === "nonTransferable" ? "non-transferable (it can never leave this wallet)" : "frozen by default")).join(", ");
         f.push({
-          check: "mintExtensions", severity: "medium",
+          check: "mintExtensions", severity: "low",
           title: `${name} has restrictions built in`,
           detail: `The token is ${words}. That's not an attack by itself, but it's how some scam tokens trap you: you can receive them and never sell them.`,
           accounts: [t.address, t.mint],
@@ -227,11 +227,13 @@ export function scan(input: ScanInput): ScanResult {
     }
 
     // 5. Frozen by the issuer.
+    // Frozen accounts are mostly scam tokens frozen by their own issuer; nothing of yours is at risk, you just can't
+    // sell them, so it's a note rather than an alarm.
     if (t.frozen && t.amount > 0n) {
       f.push({
-        check: "frozen", severity: "medium",
+        check: "frozen", severity: "low",
         title: `Your ${name} is frozen`,
-        detail: `The token's issuer froze this account: you can't move or sell it until they unfreeze it.`,
+        detail: `The token's issuer froze this account: you can't move or sell it until they unfreeze it. If it's a token you never bought, it's junk someone sent you; nothing else in your wallet is affected.`,
         accounts: [t.address, t.mint],
       });
     }

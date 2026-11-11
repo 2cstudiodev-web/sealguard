@@ -38,7 +38,7 @@ describe("scan", () => {
   it("flags Token-2022 permanent delegates (low when the token has a market price) and restrictions", () => {
     const mints = { mint: { mint: "mint", extensions: ["permanentDelegate", "transferHook"], permanentDelegate: OTHER, defaultState: null } };
     const r = scan(input({ tokenAccounts: [acct({ program: "token2022", amount: 10n })], mints }));
-    expect(r.findings.map((f) => [f.check, f.severity])).toEqual([["permanentDelegate", "medium"], ["mintExtensions", "medium"]]);
+    expect(r.findings.map((f) => [f.check, f.severity])).toEqual([["permanentDelegate", "medium"], ["mintExtensions", "low"]]);
     expect(r.findings[0].action).toMatchObject({ kind: "burnClose", amount: 10n, program: "token2022" });
     const priced = scan(input({ tokenAccounts: [acct({ program: "token2022", amount: 10n })], mints, assets: { mint: asset({ name: "Tesla xStock", symbol: "TSLAx", priced: true }) } }));
     expect(priced.findings.find((f) => f.check === "permanentDelegate")!.severity).toBe("low");
@@ -58,6 +58,12 @@ describe("scan", () => {
     expect(r.findings).toHaveLength(1);
     expect(r.findings[0]).toMatchObject({ check: "empty", severity: "ok", action: { kind: "close", tokenAccount: "acct" } });
     expect(r.score).toBe(100);
+  });
+
+  it("notes frozen holdings as low", () => {
+    const r = scan(input({ tokenAccounts: [acct({ amount: 5n, frozen: true })] }));
+    expect(r.findings[0]).toMatchObject({ check: "frozen", severity: "low" });
+    expect(r.score).toBe(98);
   });
 
   it("spots phishing airdrops by URL or bait words in the name, but not priced tokens or websites in descriptions", () => {
