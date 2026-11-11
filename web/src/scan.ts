@@ -123,14 +123,19 @@ export function scorePenalty(findings: Finding[]): number {
 export const TOKEN_ACCOUNT_RENT_LAMPORTS = 2_039_280;
 
 const URL_RE = /(https?:\/\/|www\.|\b[a-z0-9-]+\.(com|io|xyz|app|net|org|fi|gg|co|site|link|me|lol|wtf|fun)\b|t\.me\/)/i;
-const BAIT_RE = /\b(claim|reward|rewards|airdrop|bonus|voucher|gift|prize|redeem|winner|free)\b/i;
+const BAIT_RE = /\b(claim|reward|rewards|airdrop|air-drop|bonus|voucher|prize|redeem|winner|allowlist|whitelist)\b|🎁/i;
 
+/**
+ * Phishing airdrops put the bait where the wallet shows it: the token's name or symbol ("jupfinally.com 🎁 Airdrop",
+ * "$MUMU Reward | mumusol.org"). Descriptions are left alone: ordinary meme tokens put their website there, and
+ * flagging those buried a real wallet under hundreds of false alarms (first live scan, 11 Nov 2026).
+ */
 export function looksLikePhishing(a: AssetMeta): string | null {
   if (a.priced) return null;
-  const text = `${a.name} ${a.symbol} ${a.description}`;
-  if (URL_RE.test(text)) return "its name or description contains a web address";
-  if (URL_RE.test(a.jsonUri) && /t\.me\/|claim|reward|airdrop/i.test(a.jsonUri)) return "its metadata link points at a claim page";
-  if (BAIT_RE.test(a.name) || BAIT_RE.test(a.symbol)) return "its name reads like a claim or reward";
+  const shown = `${a.name} ${a.symbol}`;
+  if (URL_RE.test(shown)) return "its name is a web address";
+  if (BAIT_RE.test(shown)) return "its name reads like a claim or reward";
+  if (/claim/i.test(a.description) && URL_RE.test(a.description) && /airdrop|reward|bonus|voucher/i.test(a.description)) return "its description tells you to claim a reward at a web address";
   return null;
 }
 

@@ -60,11 +60,18 @@ describe("scan", () => {
     expect(r.score).toBe(100);
   });
 
-  it("spots phishing airdrops by URL or bait words, but not priced tokens", () => {
-    expect(looksLikePhishing(asset({ name: "Claim at sol-rewards.com" }))).toMatch(/web address/);
+  it("spots phishing airdrops by URL or bait words in the name, but not priced tokens or websites in descriptions", () => {
+    expect(looksLikePhishing(asset({ name: "jupfinally.com 🎁 Airdrop" }))).toMatch(/web address/);
+    expect(looksLikePhishing(asset({ name: "$MUMU Reward | mumusol.org" }))).toMatch(/web address/);
     expect(looksLikePhishing(asset({ name: "AIRDROP VOUCHER" }))).toMatch(/claim or reward/);
+    expect(looksLikePhishing(asset({ name: "🎁2024 Jupiter AirDrop" }))).not.toBeNull();
+    expect(looksLikePhishing(asset({ name: "Metawhips Allowlist" }))).not.toBeNull();
     expect(looksLikePhishing(asset({ name: "Free Bonus", priced: true }))).toBeNull();
     expect(looksLikePhishing(asset({ name: "Jupiter", symbol: "JUP" }))).toBeNull();
+    // Ordinary tokens put their website in the description; that alone is not phishing.
+    expect(looksLikePhishing(asset({ name: "Wassup Homie", symbol: "HOMIE", description: "The homie coin. https://wassuphomie.com" }))).toBeNull();
+    expect(looksLikePhishing(asset({ name: "Unicorn Fart Dust", description: "Free for all, join t.me/ufd" }))).toBeNull();
+    expect(looksLikePhishing(asset({ name: "Bonk Drop #5", description: "Claim your airdrop reward at bonk-claim.xyz" }))).toMatch(/claim a reward/);
     const r = scan(input({ tokenAccounts: [acct({ amount: 1000n })], assets: { mint: asset({ name: "visit t.me/claimsol" }) } }));
     expect(r.findings[0]).toMatchObject({ check: "phishing", severity: "medium", action: { kind: "burnClose" } });
   });

@@ -64,6 +64,30 @@ function parseAsset(a: any): AssetMeta {
 
 export type Progress = (step: string) => void;
 
+/**
+ * Accounts of a program matching the filters. Helius refuses plain getProgramAccounts on the big programs (the
+ * System Program holds every nonce account) and wants its paginated getProgramAccountsV2; other providers only
+ * have the classic call. Try V2 first and fall back when the method is unknown.
+ */
+async function programAccounts(program: string, filters: unknown[]): Promise<any[]> {
+  try {
+    const out: any[] = [];
+    let paginationKey: string | null = null;
+    for (let page = 0; page < 10; page++) {
+      const r: any = await rpc("getProgramAccountsV2", [program, { encoding: "jsonParsed", filters, limit: 1000, ...(paginationKey ? { paginationKey } : {}) }]);
+      out.push(...(r?.accounts ?? []));
+      paginationKey = r?.paginationKey ?? null;
+      if (!paginationKey) break;
+    }
+    return out;
+  } catch (e: any) {
+    if (e instanceof RpcError && (e.code === -32601 || /not found|not allowed|unknown method|not supported/i.test(e.message))) {
+      return (await rpc<any>("getProgramAccounts", [program, { encoding: "jsonParsed", filters }])) ?? [];
+    }
+    throw e;
+  }
+}
+
 /** Everything scan() needs, in a handful of RPC calls. */
 export async function fetchScanInput(wallet: string, onProgress: Progress = () => {}): Promise<ScanInput> {
   onProgress("Reading the wallet account");
@@ -111,8 +135,8 @@ export async function fetchScanInput(wallet: string, onProgress: Progress = () =
   const seen = new Set<string>();
   try {
     for (const offset of [12, 44]) {
-      const r = await rpc<any>("getProgramAccounts", [STAKE, { encoding: "jsonParsed", filters: [{ memcmp: { offset, bytes: wallet } }] }]);
-      for (const x of r ?? []) {
+      const r = await programAccounts(STAKE, [{ memcmp: { offset, bytes: wallet } }]);
+      for (const x of r) {
         if (seen.has(x.pubkey)) continue;
         seen.add(x.pubkey);
         const auth = x.account?.data?.parsed?.info?.meta?.authorized ?? {};
@@ -126,8 +150,8 @@ export async function fetchScanInput(wallet: string, onProgress: Progress = () =
   onProgress("Checking nonce accounts");
   const nonces: NonceAcct[] = [];
   try {
-    const nr = await rpc<any>("getProgramAccounts", [SYSTEM, { encoding: "jsonParsed", filters: [{ dataSize: 80 }, { memcmp: { offset: 8, bytes: wallet } }] }]);
-    for (const x of nr ?? []) {
+    const nr = await programAccounts(SYSTEM, [{ dataSize: 80 }, { memcmp: { offset: 8, bytes: wallet } }]);
+    for (const x of nr) {
       const info = x.account?.data?.parsed?.info ?? {};
       if (x.account?.data?.parsed?.type !== "nonce") continue;
       nonces.push({ address: x.pubkey, authority: String(info.authority ?? ""), lamports: Number(x.account?.lamports ?? 0) });

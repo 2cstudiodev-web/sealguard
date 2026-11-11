@@ -8,7 +8,7 @@ export interface Env {
 
 /** Methods the page may call. Reads, a simulation, and sending a transaction the wallet already signed. */
 const METHODS = new Set([
-  "getAccountInfo", "getBalance", "getTokenAccountsByOwner", "getMultipleAccounts", "getProgramAccounts",
+  "getAccountInfo", "getBalance", "getTokenAccountsByOwner", "getMultipleAccounts", "getProgramAccounts", "getProgramAccountsV2",
   "getAssetsByOwner", "getLatestBlockhash", "simulateTransaction", "sendTransaction", "getSignatureStatuses",
 ]);
 /** getProgramAccounts is only allowed against these programs (stake and system accounts), and only with filters. */
@@ -21,7 +21,7 @@ function checkRequest(body: any): string | null {
   if (!METHODS.has(method)) return `Method not allowed: ${method}`;
   const params = body?.params;
   if (JSON.stringify(params ?? null).length > 400_000) return "Params too large";
-  if (method === "getProgramAccounts") {
+  if (method === "getProgramAccounts" || method === "getProgramAccountsV2") {
     const [program, opts] = Array.isArray(params) ? params : [];
     if (!GPA_PROGRAMS.has(String(program))) return "getProgramAccounts is only allowed for stake and system accounts";
     if (!Array.isArray(opts?.filters) || !opts.filters.some((f: any) => f?.memcmp)) return "getProgramAccounts needs a memcmp filter";
