@@ -3,8 +3,8 @@ import { Buffer } from "buffer";
 import { PublicKey } from "@solana/web3.js";
 import { fetchScanInput, rpc } from "./rpc";
 import { CLOSE_FEE_BPS, closeFee, scan, shortKey, solWithUsd, type Action, type Finding, type ScanInput, type ScanResult, type Severity } from "./scan";
-import { batchActions, buildTransaction, describeAction, describeFee, groupFee } from "./tx";
-import { connect, disconnect, listWallets, onWalletsChange, registerMobile, signAndSend, type Connected } from "./wallet";
+import { buildTransaction, describeAction, describeFee, groupFee, packActions, TXS_PER_APPROVAL } from "./tx";
+import { connect, disconnect, listWallets, onWalletsChange, registerMobile, signAndSendMany, type Connected } from "./wallet";
 import { isGuardMember, onGuardChange, setGuardWallet } from "./guard";
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector(sel) as T;
@@ -115,6 +115,7 @@ async function doScan(): Promise<void> {
     const input = await fetchScanInput(address, (s) => setStatus(`${s}…`, "busy"));
     lastInput = input;
     result = scan(input, { closeFeeBps: feeBps() });
+    void reportStat("scan");
     selected = new Set();
     setStatus("");
     renderReport();
@@ -153,6 +154,7 @@ function renderReport(): void {
   list.querySelectorAll<HTMLInputElement>("input[type=checkbox]").forEach((cb) => cb.addEventListener("change", () => {
     const idx = String(cb.dataset.i).split(",").map(Number);
     for (const i of idx) { if (cb.checked) selected.add(i); else selected.delete(i); }
+    restoreChecks();
     renderFixBar();
   }));
   restoreChecks();
@@ -168,7 +170,9 @@ function renderReport(): void {
 function restoreChecks(): void {
   $("#findings").querySelectorAll<HTMLInputElement>("input[type=checkbox]").forEach((cb) => {
     const idx = String(cb.dataset.i).split(",").map(Number);
-    cb.checked = idx.length > 0 && idx.every((i) => selected.has(i));
+    const n = idx.filter((i) => selected.has(i)).length;
+    cb.checked = idx.length > 0 && n === idx.length;
+    cb.indeterminate = n > 0 && n < idx.length;
   });
 }
 
@@ -180,7 +184,7 @@ function applyPendingFix(): void {
   let n = 0;
   result.findings.forEach((f, i) => {
     if (!f.action) return;
-    if ((p.claim && f.action.kind === "close") || (p.fix && f.accounts.includes(p.fix))) { selected.add(i); n++; }
+    if ((p.claim && f.action.kind === "close" && !f.keep) || (p.fix && f.accounts.includes(p.fix))) { selected.add(i); n++; }
   });
   restoreChecks();
   renderFixBar();
@@ -222,17 +226,29 @@ function groupCard(fs: Finding[], idx: number[]): string {
   const first = fs[idx[0]];
   const n = idx.length;
   const withAction = idx.filter((i) => fs[i].action);
-  const items = idx.map((i) => `<li>${esc(fs[i].title)} · ${fs[i].accounts.map((a) => `<a href="${explorer(a)}" target="_blank" rel="noopener">${shortKey(a)}</a>`).join(" · ")}</li>`).join("");
-  const action = withAction.length
-    ? `<label class="act"><input type="checkbox" data-i="${withAction.join(",")}"${connected ? "" : " disabled"}> ${esc(actionLabel(fs[withAction[0]].action!))} (all ${withAction.length})</label>`
+  const recommended = withAction.filter((i) => !fs[i].keep);
+  const kept = withAction.length - recommended.length;
+  const off = connected ? "" : " disabled";
+  const items = idx.map((i) => {
+    const f = fs[i];
+    const links = f.accounts.map((a) => `<a href="${explorer(a)}" target="_blank" rel="noopener">${shortKey(a)}</a>`).join(" · ");
+    const box = f.action ? `<input type="checkbox" class="itembox" data-i="${i}"${off}> ` : "";
+    const why = f.keep ? ` <span class="keep">Left unticked: ${esc(f.keep)}</span>` : "";
+    return `<li><label>${box}${esc(f.title)}</label> · ${links}${why}</li>`;
+  }).join("");
+  const label = recommended.length
+    ? `${esc(actionLabel(fs[withAction[0]].action!))} (${recommended.length === withAction.length ? `all ${recommended.length}` : `${recommended.length} of ${withAction.length}`})`
     : "";
+  const action = recommended.length
+    ? `<label class="act"><input type="checkbox" class="groupbox" data-i="${recommended.join(",")}"${off}> ${label}</label>${kept ? `<p class="small muted">${kept} left unticked on purpose; open the list to see why or to tick them yourself.</p>` : ""}`
+    : withAction.length ? `<p class="small muted">All ${withAction.length} are left unticked on purpose; open the list to see why or to tick them yourself.</p>` : "";
   const show = `Show all ${n}`;
   return `<div class="card sev-${first.severity}"><div class="sev">${SEV_LABEL[first.severity]}</div><h3>${esc((GROUP_TITLE[first.check] ?? ((k: number) => `${k} findings`))(n))}</h3><p>${esc(first.detail)}</p><button class="more linkbtn" data-show="${show}">${show}</button><ul class="grouplist small" hidden>${items}</ul>${action}</div>`;
 }
 
 function card(f: Finding, i: number): string {
   const links = f.accounts.map((a) => `<a href="${explorer(a)}" target="_blank" rel="noopener">${shortKey(a)}</a>`).join(" · ");
-  const action = f.action ? `<label class="act"><input type="checkbox" data-i="${i}"${connected ? "" : " disabled"}> ${esc(actionLabel(f.action))}</label>` : "";
+  const action = f.action ? `<label class="act"><input type="checkbox" data-i="${i}"${connected ? "" : " disabled"}> ${esc(actionLabel(f.action))}</label>${f.keep ? `<p class="small keep">Left unticked: ${esc(f.keep)}</p>` : ""}` : "";
   return `<div class="card sev-${f.severity}"><div class="sev">${SEV_LABEL[f.severity]}</div><h3>${esc(f.title)}</h3><p>${esc(f.detail)}</p><p class="links">${links}</p>${action}</div>`;
 }
 
@@ -255,7 +271,7 @@ function renderFixBar(): void {
   // account" lines pushed the button off the screen.
   const list = $("#fixlist");
   const bps = feeBps();
-  const fee = batchActions(acts).reduce((sum, g) => sum + groupFee(g, bps), 0);
+  const fee = acts.length && connected ? packActions(acts, new PublicKey(connected.address), { feeBps: bps }).reduce((sum, g) => sum + groupFee(g, bps), 0) : 0;
   list.innerHTML = acts.map((a) => `<li>${esc(describeAction(a))}</li>`).join("") + (fee ? `<li>${esc(describeFee(fee))}</li>` : "");
   const closing = acts.filter((a) => a.kind === "close").reduce((sum, a) => sum + (a.kind === "close" ? a.lamports : 0), 0);
   const price = result?.solPriceUsd ?? null;
@@ -283,22 +299,41 @@ async function doFix(): Promise<void> {
   const actions = [...selected].sort((a, b) => a - b).map((i) => result!.findings[i].action!).filter(Boolean);
   if (!actions.length) return;
   const owner = new PublicKey(connected.address);
-  const groups = batchActions(actions);
+  const bps = feeBps();
+  const groups = packActions(actions, owner, { feeBps: bps });
+  const rounds = Math.ceil(groups.length / TXS_PER_APPROVAL);
   const log = $("#fixlog");
   log.innerHTML = "";
   $("#fixbtn").toggleAttribute("disabled", true);
+  let sent = 0, failed = 0, closes = 0, closeLamports = 0, feeLamports = 0;
   try {
-    for (let g = 0; g < groups.length; g++) {
-      setStatus(`Transaction ${g + 1} of ${groups.length}: preparing…`, "busy");
+    for (let r = 0; r < rounds; r++) {
+      const chunk = groups.slice(r * TXS_PER_APPROVAL, (r + 1) * TXS_PER_APPROVAL);
+      const label = rounds > 1 ? `Batch ${r + 1} of ${rounds}` : chunk.length > 1 ? `${chunk.length} transactions` : "Transaction";
+      setStatus(`${label}: preparing…`, "busy");
       const bh = await rpc<any>("getLatestBlockhash", [{ commitment: "confirmed" }]);
-      const tx = buildTransaction(groups[g], owner, bh.value.blockhash, bh.value.lastValidBlockHeight, { feeBps: feeBps() });
-      const sim = await rpc<any>("simulateTransaction", [tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64"), { encoding: "base64", sigVerify: false, replaceRecentBlockhash: true }]);
-      if (sim?.value?.err) throw new Error(`The network rejected transaction ${g + 1} in simulation: ${JSON.stringify(sim.value.err)}. Nothing was sent.`);
-      setStatus(`Transaction ${g + 1} of ${groups.length}: waiting for your signature…`, "busy");
-      const sig = await signAndSend(connected, tx, async (raw) => rpc<string>("sendTransaction", [Buffer.from(raw).toString("base64"), { encoding: "base64", preflightCommitment: "confirmed" }]));
-      log.innerHTML += `<li>Sent <a href="https://solscan.io/tx/${sig}" target="_blank" rel="noopener">${sig.slice(0, 8)}…</a> (${groups[g].length} action${groups[g].length === 1 ? "" : "s"})</li>`;
+      const txs = chunk.map((g) => buildTransaction(g, owner, bh.value.blockhash, bh.value.lastValidBlockHeight, { feeBps: bps }));
+      const sims = await Promise.all(txs.map((tx) => rpc<any>("simulateTransaction", [tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64"), { encoding: "base64", sigVerify: false, replaceRecentBlockhash: true }])));
+      const bad = sims.findIndex((sim) => sim?.value?.err);
+      if (bad >= 0) throw new Error(`The network rejected a transaction in simulation: ${JSON.stringify(sims[bad].value.err)}. Nothing in this batch was sent.`);
+      setStatus(`${label}: waiting for your approval in the wallet (${chunk.length} transaction${chunk.length === 1 ? "" : "s"})…`, "busy");
+      const results = await signAndSendMany(connected, txs, async (raw) => rpc<string>("sendTransaction", [Buffer.from(raw).toString("base64"), { encoding: "base64", preflightCommitment: "confirmed" }]));
+      results.forEach((res, k) => {
+        const g = chunk[k];
+        if (res.ok) {
+          sent++;
+          for (const a of g) if (a.kind === "close") { closes++; closeLamports += a.lamports; }
+          feeLamports += groupFee(g, bps);
+          log.innerHTML += `<li>Sent <a href="https://solscan.io/tx/${res.signature}" target="_blank" rel="noopener">${res.signature.slice(0, 8)}…</a> (${g.length} action${g.length === 1 ? "" : "s"})</li>`;
+        } else {
+          failed++;
+          log.innerHTML += `<li class="err">Not sent (${g.length} action${g.length === 1 ? "" : "s"}): ${esc(res.error)}</li>`;
+        }
+      });
+      if (results.length < chunk.length || results.every((x) => !x.ok)) break;
     }
-    setStatus("Done. Rescanning…", "busy");
+    void reportStat("fix", { closes, lamports: closeLamports, fee: feeLamports });
+    setStatus(failed ? `${sent} sent, ${failed} not sent. Rescanning…` : "Done. Rescanning…", failed ? "err" : "busy");
     await new Promise((r) => setTimeout(r, 2500));
     await doScan();
   } catch (e: any) {
@@ -306,6 +341,11 @@ async function doFix(): Promise<void> {
   } finally {
     syncFixButton();
   }
+}
+
+/** Anonymous counters for 2C Studio (no address): how many scans, how many accounts closed, how much fee. */
+async function reportStat(kind: "scan" | "fix", data: Record<string, number> = {}): Promise<void> {
+  try { await fetch("/api/stat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind, ...data }), keepalive: true }); } catch { /* best effort */ }
 }
 
 registerMobile();

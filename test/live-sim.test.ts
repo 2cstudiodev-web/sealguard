@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { PublicKey } from "@solana/web3.js";
 import { fetchScanInput, rpcOver } from "../shared/chain";
 import { scan, type Action } from "../web/src/scan";
-import { batchActions, buildTransaction, groupFee } from "../web/src/tx";
+import { buildTransaction, groupFee, packActions } from "../web/src/tx";
 
 const url = process.env.LIVE_RPC;
 const wallet = process.env.LIVE_WALLET;
@@ -12,11 +12,12 @@ const wallet = process.env.LIVE_WALLET;
 describe.skipIf(!url || !wallet)("live close simulation", () => {
   it("simulates every close batch with its fee", async () => {
     const rpc = rpcOver(url!, 30_000);
-    const r = scan(await fetchScanInput(rpc, wallet!));
-    const closes = r.findings.map((f) => f.action).filter((a): a is Action => a?.kind === "close");
+    const r = scan(await fetchScanInput(rpc, wallet!, () => {}, { activityUpTo: 40 }));
+    const kept = r.findings.filter((f) => f.action?.kind === "close" && f.keep).map((f) => `${f.title}: ${f.keep}`);
+    const closes = r.findings.filter((f) => f.action?.kind === "close" && !f.keep).map((f) => f.action!) as Action[];
     const owner = new PublicKey(wallet!);
-    const lines = [`closes ${closes.length}, rent ${r.reclaim.lamports}, fee ${r.reclaim.fee}, net ${r.reclaim.net}`];
-    for (const g of batchActions(closes)) {
+    const lines = [`ticked by default ${closes.length}, kept ${kept.length}`, ...kept.map((k) => `  kept: ${k}`), ...r.findings.filter((f) => f.check === "empty").slice(0, 5).map((f) => `  name: ${f.title}`)];
+    for (const g of packActions(closes, owner)) {
       const bh = await rpc<any>("getLatestBlockhash", [{ commitment: "confirmed" }]);
       const tx = buildTransaction(g, owner, bh.value.blockhash, bh.value.lastValidBlockHeight);
       const sim = await rpc<any>("simulateTransaction", [tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64"), { encoding: "base64", sigVerify: false, replaceRecentBlockhash: true }]);

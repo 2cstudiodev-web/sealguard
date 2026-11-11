@@ -66,6 +66,38 @@ export async function signAndSend(c: Connected, tx: Transaction, sendRaw: (raw: 
   return sendRaw(out.signedTransaction);
 }
 
+export type SendResult = { ok: true; signature: string } | { ok: false; error: string };
+
+/**
+ * Signs and sends several transactions with one approval where the wallet allows it: the wallet's own
+ * signAndSendAllTransactions, else signTransaction with several inputs (we send them), else one by one.
+ */
+export async function signAndSendMany(c: Connected, txs: Transaction[], sendRaw: (raw: Uint8Array) => Promise<string>): Promise<SendResult[]> {
+  const inputs = txs.map((tx) => ({ account: c.account, chain: CHAIN, transaction: tx.serialize({ requireAllSignatures: false, verifySignatures: false }) }));
+  const all: any = c.wallet.features["solana:signAndSendAllTransactions"];
+  if (all && txs.length > 1) {
+    const settled = await all.signAndSendAllTransactions(inputs.map((i) => ({ ...i, options: { preflightCommitment: "confirmed" } })), { mode: "parallel" });
+    return settled.map((r: PromiseSettledResult<any>) => (r.status === "fulfilled" ? { ok: true, signature: base58(r.value.signature) } : { ok: false, error: String((r.reason as any)?.message ?? r.reason) }));
+  }
+  const st: any = c.wallet.features["solana:signTransaction"];
+  if (st && txs.length > 1) {
+    const signed = await st.signTransaction(...inputs);
+    const out: SendResult[] = [];
+    for (const s of signed) {
+      try { out.push({ ok: true, signature: await sendRaw(s.signedTransaction) }); } catch (e: any) { out.push({ ok: false, error: String(e?.message ?? e) }); }
+    }
+    return out;
+  }
+  const out: SendResult[] = [];
+  for (const tx of txs) {
+    try { out.push({ ok: true, signature: await signAndSend(c, tx, sendRaw) }); } catch (e: any) {
+      out.push({ ok: false, error: String(e?.message ?? e) });
+      if (/reject|denied|cancel/i.test(String(e?.message ?? e))) break;
+    }
+  }
+  return out;
+}
+
 const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 export function base58(bytes: Uint8Array): string {
   let n = 0n;

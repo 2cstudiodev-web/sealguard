@@ -19,6 +19,8 @@ export type TokenAcct = {
   isNative: boolean;
   /** The account's balance in lamports: the rent deposit closing it returns (Token-2022 accounts with extensions hold more). */
   lamports?: number;
+  /** When the account last had a transaction (ms), for empty accounts on small wallets; undefined when not looked up. */
+  lastActivity?: number | null;
 };
 
 export type MintInfo = {
@@ -92,6 +94,8 @@ export type Finding = {
   accounts: string[];
   /** What one tap can do about it; absent when only you can decide (or nothing can be done). */
   action?: Action;
+  /** Why this fix is left unticked by default (the user can still tick it). */
+  keep?: string;
 };
 
 export type ScanResult = {
@@ -143,6 +147,24 @@ export const TOKEN_ACCOUNT_RENT_LAMPORTS = 2_039_280;
 
 /** SealGuard's fee on rent returned by closing empty accounts, in basis points (500 = 5%). Revoking, burning and nonce withdrawals are free. */
 export const CLOSE_FEE_BPS = 500;
+
+/**
+ * Tokens people receive again and again. Their empty accounts are left unticked: closing one means paying the
+ * deposit again the next time the token arrives.
+ */
+export const COMMON_MINTS: Record<string, string> = {
+  EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v: "USDC",
+  Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB: "USDT",
+  "2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo": "PYUSD",
+  So11111111111111111111111111111111111111112: "wrapped SOL",
+  SKRbvo6Gf7GondiT3BbTfuRDPqLWei4j2Qy2NPGZhW3: "SKR",
+  JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN: "JUP",
+  DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263: "BONK",
+  J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn: "JitoSOL",
+  mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So: "mSOL",
+};
+/** An empty account used this recently is left unticked: you may still be trading that token. */
+export const RECENT_ACTIVITY_MS = 30 * 86_400_000;
 export const CLOSE_FEE_PERCENT = CLOSE_FEE_BPS / 100;
 
 /** The fee on `lamports` of returned rent, rounded down. */
@@ -199,6 +221,7 @@ export function formatAmount(amount: bigint, decimals: number): string {
 
 function assetName(mint: string, assets: Record<string, AssetMeta>): string {
   const a = assets[mint];
+  if (!a && COMMON_MINTS[mint]) return COMMON_MINTS[mint];
   if (a && (a.name || a.symbol)) return a.symbol ? `${a.name || a.symbol} (${a.symbol})` : a.name;
   return shortKey(mint);
 }
@@ -206,10 +229,13 @@ function assetName(mint: string, assets: Record<string, AssetMeta>): string {
 export type ScanOptions = {
   /** The fee on rent returned by closing empty accounts; 0 for wallets with an active guard. */
   closeFeeBps?: number;
+  /** For the "used in the last 30 days" rule (tests pin it). */
+  now?: number;
 };
 
 export function scan(input: ScanInput, opts: ScanOptions = {}): ScanResult {
   const feeBps = opts.closeFeeBps ?? CLOSE_FEE_BPS;
+  const now = opts.now ?? Date.now();
   const f: Finding[] = [];
   const { wallet, tokenAccounts, mints, assets } = input;
   const solPrice = input.solPriceUsd ?? null;
@@ -315,8 +341,13 @@ export function scan(input: ScanInput, opts: ScanOptions = {}): ScanResult {
         check: "empty", severity: "ok",
         title: t.isNative ? "Empty wrapped-SOL account" : `Empty ${name} account`,
         detail: `Nothing in it. Closing it returns its ${solWithUsd(t.lamports ?? TOKEN_ACCOUNT_RENT_LAMPORTS, solPrice)} rent deposit to you, ${feeBps ? `less SealGuard's ${feeBps / 100}% fee` : "with no fee because this wallet has the guard"}.`,
-        accounts: [t.address],
+        accounts: [t.address, t.mint],
         action: { kind: "close", tokenAccount: t.address, mint: t.mint, program: t.program, lamports: t.lamports ?? TOKEN_ACCOUNT_RENT_LAMPORTS },
+        keep: COMMON_MINTS[t.mint]
+          ? `You'll likely receive ${COMMON_MINTS[t.mint]} again; closing it means paying the deposit again next time.`
+          : t.lastActivity && now - t.lastActivity < RECENT_ACTIVITY_MS
+            ? "Used in the last 30 days; you may still be trading this token."
+            : undefined,
       });
     }
 

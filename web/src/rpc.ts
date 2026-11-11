@@ -10,6 +10,9 @@ export const RPC_TIMEOUT_MS = 30_000;
 
 export const rpc = rpcOver("/rpc", RPC_TIMEOUT_MS);
 
+/** Empty accounts on wallets with up to this many get a "used recently?" lookup (one call each). */
+export const ACTIVITY_LOOKUP_UP_TO = 40;
+
 export function fetchScanInput(wallet: string, onProgress: Progress = () => {}): Promise<ScanInput> {
-  return fetchWith(rpc, wallet, onProgress);
+  return fetchWith(rpc, wallet, onProgress, { activityUpTo: ACTIVITY_LOOKUP_UP_TO });
 }

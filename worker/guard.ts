@@ -72,6 +72,18 @@ export async function handleApi(request: Request, env: GuardEnv, path: string, n
     if (!env.SESSION_SECRET) throw new ApiError(503, "not_configured", "The guard isn't set up on this deployment yet");
     const method = request.method;
 
+    // Anonymous counters from the page (no address, no session): how many scans and fixes, what was closed.
+    if (path === "/api/stat" && method === "POST") {
+      const b = await readJson(request);
+      const kind = b.kind === "scan" || b.kind === "fix" ? b.kind : null;
+      if (!kind) throw new ApiError(400, "bad_stat");
+      const num = (v: unknown, max: number) => (Number.isInteger(v) && (v as number) >= 0 && (v as number) <= max ? (v as number) : 0);
+      const day = new Date(now).toISOString().slice(0, 10);
+      await env.DB.prepare("INSERT INTO daily_stats (day, kind, n, closes, lamports, fee) VALUES (?, ?, 1, ?, ?, ?) ON CONFLICT(day, kind) DO UPDATE SET n = n + 1, closes = closes + excluded.closes, lamports = lamports + excluded.lamports, fee = fee + excluded.fee")
+        .bind(day, kind, num(b.closes, 100_000), num(b.lamports, 1e13), num(b.fee, 1e12)).run();
+      return json({ ok: true });
+    }
+
     if (path === "/api/auth/nonce" && method === "POST") {
       const { wallet } = await readJson(request);
       if (!isWallet(wallet)) throw new ApiError(400, "bad_wallet");

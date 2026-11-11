@@ -6,8 +6,13 @@ import { CLOSE_FEE_BPS, closeFee, type Action, type TokenProgram } from "./scan"
 /** 2C Studio's treasury, where the close fee goes (the same wallet the guard subscription is paid to). */
 export const TREASURY = new PublicKey("B3BCTvv1LUpXZ2PpB4HeppxuSsS8Y1GSjYYG6NB6xTUA");
 
-/** Actions per transaction. Revoke/close are tiny; burn+close is two instructions. 10 keeps every mix well under the size limit. */
+/** Actions per transaction in the simple splitter (kept for callers that don't pack by size). */
 export const MAX_ACTIONS_PER_TX = 10;
+/** Solana's packet limit for a signed transaction, and the most actions we put in one (compute stays well under 200k). */
+export const TX_SIZE_LIMIT = 1232;
+export const MAX_ACTIONS_PACKED = 26;
+/** Transactions a wallet is asked to approve at once. */
+export const TXS_PER_APPROVAL = 20;
 
 export function programId(p: TokenProgram): PublicKey {
   return p === "token2022" ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID;
@@ -17,6 +22,30 @@ export function programId(p: TokenProgram): PublicKey {
 export function batchActions(actions: Action[], max = MAX_ACTIONS_PER_TX): Action[][] {
   const out: Action[][] = [];
   for (let i = 0; i < actions.length; i += max) out.push(actions.slice(i, i + max));
+  return out;
+}
+
+/**
+ * Splits actions into transactions as full as Solana allows: each group, built with its fee transfer and a
+ * placeholder blockhash, must serialize (with its one signature) within TX_SIZE_LIMIT. Keeps the order.
+ */
+export function packActions(actions: Action[], owner: PublicKey, opts: { treasury?: PublicKey; feeBps?: number } = {}): Action[][] {
+  // web3.js refuses to serialize an oversized transaction (it throws), which also means "doesn't fit".
+  const fits = (g: Action[]) => {
+    try { return buildTransaction(g, owner, "11111111111111111111111111111111", 0, opts).serialize({ requireAllSignatures: false, verifySignatures: false }).length <= TX_SIZE_LIMIT; } catch { return false; }
+  };
+  const out: Action[][] = [];
+  let cur: Action[] = [];
+  for (const a of actions) {
+    const next = [...cur, a];
+    if (cur.length && (next.length > MAX_ACTIONS_PACKED || !fits(next))) {
+      out.push(cur);
+      cur = [a];
+    } else {
+      cur = next;
+    }
+  }
+  if (cur.length) out.push(cur);
   return out;
 }
 

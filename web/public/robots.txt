@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /rpc
+
+Sitemap: https://guard.2cstudio.app/sitemap.xml

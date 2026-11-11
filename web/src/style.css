@@ -69,3 +69,7 @@ footer{max-width:820px;margin:20px auto 0;padding:18px;border-top:1px solid var(
 .plantable th{color:var(--fg);font-weight:700}
 .plantable td:nth-child(n+2),.plantable th:nth-child(n+2){text-align:center;white-space:nowrap}
 .plantable td:last-child,.plantable th:last-child{color:var(--acc)}
+.keep{color:#ffb347;font-size:12px}
+.grouplist label{cursor:pointer}
+.grouplist .itembox{margin-right:4px}
+#fixlog .err{color:var(--bad)}

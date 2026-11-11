@@ -75,6 +75,14 @@ function parseAsset(a: any): AssetMeta {
 
 export type Progress = (step: string) => void;
 
+export type FetchOptions = {
+  /**
+   * Look up when each empty account was last used, so recently used ones can be left unticked. One call per
+   * account, so only for wallets with up to this many empty accounts (0 = never; the guard cron doesn't need it).
+   */
+  activityUpTo?: number;
+};
+
 /**
  * Accounts of a program matching the filters. Helius refuses plain getProgramAccounts on the big programs (the
  * System Program holds every nonce account) and wants its paginated getProgramAccountsV2; other providers only
@@ -100,7 +108,7 @@ async function programAccounts(rpc: RpcCall, program: string, filters: unknown[]
 }
 
 /** Everything scan() needs, in a handful of RPC calls. */
-export async function fetchScanInput(rpc: RpcCall, wallet: string, onProgress: Progress = () => {}): Promise<ScanInput> {
+export async function fetchScanInput(rpc: RpcCall, wallet: string, onProgress: Progress = () => {}, opts: FetchOptions = {}): Promise<ScanInput> {
   onProgress("Reading the wallet account");
   const acct = await rpc<any>("getAccountInfo", [wallet, { encoding: "base64" }]);
   const walletOwner: string = acct?.value?.owner ?? SYSTEM_PROGRAM_ID;
@@ -137,6 +145,35 @@ export async function fetchScanInput(rpc: RpcCall, wallet: string, onProgress: P
   } catch {
     // DAS is a Helius extra; without it the phishing rule just has fewer names to look at.
     dasFailed = true;
+  }
+
+  // DAS lists only tokens with a balance; empty accounts' tokens get their names in batches (capped for huge wallets).
+  const emptyMints = [...new Set(tokenAccounts.filter((t) => t.amount === 0n && !assets[t.mint]).map((t) => t.mint))].slice(0, 2000);
+  if (emptyMints.length && !dasFailed) {
+    onProgress("Reading the names of your empty accounts' tokens");
+    for (let i = 0; i < emptyMints.length; i += 1000) {
+      try {
+        const r = await rpc<any[]>("getAssetBatch", { ids: emptyMints.slice(i, i + 1000) });
+        for (const a of r ?? []) if (a?.id) assets[a.id] = parseAsset(a);
+      } catch {
+        break;
+      }
+    }
+  }
+
+  const empties = tokenAccounts.filter((t) => t.amount === 0n && !t.frozen);
+  if (opts.activityUpTo && empties.length && empties.length <= opts.activityUpTo) {
+    onProgress("Checking which empty accounts you used recently");
+    for (let i = 0; i < empties.length; i += 6) {
+      await Promise.all(empties.slice(i, i + 6).map(async (t) => {
+        try {
+          const sigs = await rpc<any[]>("getSignaturesForAddress", [t.address, { limit: 1 }]);
+          t.lastActivity = typeof sigs?.[0]?.blockTime === "number" ? sigs[0].blockTime * 1000 : null;
+        } catch {
+          t.lastActivity = undefined;
+        }
+      }));
+    }
   }
 
   // The SOL price, for the "≈ US$" next to rent and stake amounts (the DAS feed prices wrapped SOL).
