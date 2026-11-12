@@ -43,6 +43,7 @@
     <p class="lead">Every token you trade can leave a little SOL locked in an empty account, and pump.fun keeps a deposit too. SealGuard finds it and gives it back, and while it looks, it checks who can still move your tokens and which tokens are scams. You approve every fix in your own wallet.</p>
     <div id="connect">
       <form id="heroform" class="search big"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M20 20l-3.5-3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><input id="heroinput" type="text" placeholder="Paste your Solana wallet address" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Solana wallet address"><button id="heropaste" class="btn small ghost" type="button" hidden>Paste</button><button class="btn small primary" type="submit">Check wallet</button></form>
+      <p id="herowarn" class="status err" role="alert" hidden></p>
       <p class="heroalt"><span class="muted">or</span> <button id="heroconnect" class="btn small" type="button">Connect wallet</button></p>
       <p class="small muted">Only your public address. Never type your seed phrase or private key anywhere.</p>
       <details class="where"><summary>Where do I find my address?</summary><p>Open your wallet app and tap your account name or the copy icon next to your address. It's 32 to 44 letters and numbers, like 7xKX…9fQ2. It's safe to share: it only lets SealGuard read what's public on Solana.</p></details>

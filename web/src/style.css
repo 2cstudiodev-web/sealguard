@@ -40,6 +40,7 @@ main{max-width:1160px;margin:0 auto;padding:0 20px 40px}
 .herotext{min-width:0}
 /* Phones: the box gets the whole first line, Paste and Check wallet share the second. */
 @media (max-width:560px){.search.big{flex-wrap:wrap;padding:7px}.search.big svg{margin-left:9px}.search.big input{flex:1 1 calc(100% - 40px);width:0}.search.big .btn{flex:1 1 0}}
+#herowarn{margin:10px 0 0;max-width:600px}
 .heroalt{display:flex;align-items:center;gap:10px;margin:12px 0 10px}
 .where{margin:0 0 12px;max-width:600px}
 .where summary{cursor:pointer;color:var(--acc);font-size:14px;width:max-content}

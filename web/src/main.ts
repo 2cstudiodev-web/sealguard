@@ -126,8 +126,10 @@ function stopSecret(raw: string): boolean {
   if (!looksSecret(raw)) return false;
   $<HTMLInputElement>("#addrinput").value = "";
   $<HTMLInputElement>("#heroinput").value = "";
-  setStatus(SECRET_WARNING, "err");
-  $("#status").scrollIntoView({ block: "center", behavior: "smooth" });
+  // Right under the hero box while it's on screen (a phone keyboard would hide the status line further down).
+  const warn = $("#herowarn");
+  if (!$("#connect").hidden) { warn.textContent = SECRET_WARNING; warn.hidden = false; setStatus(""); }
+  else { setStatus(SECRET_WARNING, "err"); $("#status").scrollIntoView({ block: "center", behavior: "smooth" }); }
   return true;
 }
 
@@ -538,7 +540,10 @@ $("#walletpick").addEventListener("click", (e) => { if (e.target === e.currentTa
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeWalletPicker(); closeUpsell(); } });
 $("#addrform").addEventListener("submit", (e) => doScanAddress(e));
 $("#heroform").addEventListener("submit", (e) => doScanAddress(e, $<HTMLInputElement>("#heroinput")));
-for (const id of ["#addrinput", "#heroinput"]) $<HTMLInputElement>(id).addEventListener("input", (e) => { stopSecret((e.target as HTMLInputElement).value); });
+for (const id of ["#addrinput", "#heroinput"]) $<HTMLInputElement>(id).addEventListener("input", (e) => {
+  const v = (e.target as HTMLInputElement).value;
+  if (!stopSecret(v) && v.trim()) $("#herowarn").hidden = true;
+});
 $("#heroconnect").addEventListener("click", navConnect);
 // Paste: one tap on a phone. Shown only where the browser can read the clipboard; if it can't, the box gets focus.
 if (navigator.clipboard?.readText) {
