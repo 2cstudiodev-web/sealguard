@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Get your SOL back from pump.fun: deposits and empty token accounts · SealGuard</title>
+<meta name="description" content="Trading on pump.fun leaves SOL behind in two places: a volume-account deposit and an empty token account for every memecoin you sold. How much, and how to take it back.">
+<link rel="canonical" href="https://guard.2cstudio.app/guides/pump-fun-sol-back">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Get your SOL back from pump.fun: deposits and empty token accounts">
+<meta property="og:description" content="Trading on pump.fun leaves SOL behind in two places: a volume-account deposit and an empty token account for every memecoin you sold. How much, and how to take it back.">
+<meta property="og:url" content="https://guard.2cstudio.app/guides/pump-fun-sol-back">
+<meta property="og:image" content="https://guard.2cstudio.app/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/logo.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<style>
+  :root{--bg:#050608;--panel:#111419;--line:#22272f;--fg:#f4f6f8;--dim:#9aa3b2;--acc:#14f195;--ink:#04140c}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  main{max-width:760px;margin:0 auto;padding:0 18px 48px}
+  .top{display:flex;justify-content:space-between;align-items:center;max-width:760px;margin:0 auto;padding:16px 18px;font-size:14px}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:800;font-size:18px;color:var(--fg);text-decoration:none}
+  a{color:var(--acc)}
+  h1{font-size:32px;line-height:1.2;margin:18px 0 12px}
+  h2{font-size:20px;margin:34px 0 10px}
+  h3{font-size:16px;margin:18px 0 4px}
+  p,li{color:var(--dim)}
+  p{margin:0 0 12px}
+  ul,ol{padding-left:22px;margin:0 0 12px}
+  li{margin:0 0 6px}
+  b,strong{color:var(--fg)}
+  code{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:14px;color:var(--fg);word-break:break-word}
+  .lead{font-size:18px}
+  .cta{background:var(--panel);border:1px solid var(--acc);border-radius:16px;padding:18px 20px;margin:22px 0}
+  .cta p{margin:8px 0 0;font-size:14px}
+  .btn{display:inline-block;background:var(--acc);color:var(--ink);font-weight:700;text-decoration:none;border-radius:10px;padding:11px 20px}
+  .muted{color:var(--dim);font-size:14px}
+  footer{max-width:760px;margin:20px auto 0;padding:18px;border-top:1px solid var(--line);font-size:13px;color:var(--dim);text-align:center}
+  footer a{margin:0 8px}
+  .tbl{overflow-x:auto;margin:0 0 12px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--dim)}
+  th{color:var(--fg);font-weight:700}
+  td:first-child{color:var(--fg)}
+  .note{font-size:13px}
+</style>
+<script type="application/ld+json">
+{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Does closing touch my coins?", "acceptedAnswer": {"@type": "Answer", "text": "No. Only accounts with a zero balance can be closed."}}, {"@type": "Question", "name": "Can I do it for free?", "acceptedAnswer": {"@type": "Answer", "text": "Yes, with the Solana command line (spl-token close for token accounts). See closing empty token accounts."}}]}
+</script>
+<script src="https://pulse.2cstudio.app/v1/web.js" data-site="web-sealguard" defer></script>
+</head>
+<body>
+<header class="top"><a class="brand" href="/"><img src="/mark.svg" alt="" width="28" height="28"> SealGuard</a><span class="muted">by <a href="https://2cstudio.app">2C Studio</a></span></header>
+<main>
+<h1>Get your SOL back from pump.fun</h1>
+<p class="lead">Trading on pump.fun leaves SOL locked in two places. Neither is lost: you can close both and the SOL comes back to your wallet.</p>
+
+<div class="cta">
+  <a class="btn" href="/">Check my wallet</a>
+  <p>Free scan. Nothing is sent until you approve it in your wallet.</p>
+</div>
+
+<h2>1. The volume-account deposit</h2>
+<p>On your first trade, pump.fun opens a volume account for your wallet, and PumpSwap opens another. Each holds about 0.0018 SOL, plus any SOL cashback you haven't claimed.</p>
+<ul>
+  <li><b>Claim first.</b> If the account still holds pump.fun rewards, or cashback paid in a token such as USDC, claim those on pump.fun first. SealGuard won't offer to close it until you have.</li>
+  <li><b>It comes back.</b> Your next trade on pump.fun opens a new one and takes the deposit again, so close it only if you've stopped trading there.</li>
+</ul>
+
+<h2>2. Empty token accounts</h2>
+<p>Every memecoin you bought has its own token account holding rent. Accounts opened before September 2026 hold about 0.002 SOL each; newer ones about 0.0015 SOL, after Solana lowered rent. Selling the coin empties the account but doesn't close it. Fifty sold memecoins come to about 0.075–0.1 SOL.</p>
+
+<h2>How SealGuard closes them</h2>
+<p>Connect your wallet, check the list (tokens you'll likely receive again and accounts used in the last 30 days are left unticked, with the reason), and press Fix selected. Your wallet shows each transaction before you sign.</p>
+<p><b>Fee:</b> 5% of the deposit or rent returned, paid in the same transaction; not on your cashback. Wallets with the guard (US$49 a year) pay no fee.</p>
+
+<h2>Questions</h2>
+<h3>Does closing touch my coins?</h3>
+<p>No. Only accounts with a zero balance can be closed.</p>
+<h3>Can I do it for free?</h3>
+<p>Yes, with the Solana command line (<code>spl-token close</code> for token accounts). See <a href="/guides/close-empty-token-accounts">closing empty token accounts</a>.</p>
+</main>
+<footer><a href="/">SealGuard</a><a href="/guides/close-empty-token-accounts">Close empty accounts</a><a href="/guides/revoke-token-approvals">Revoke token approvals</a><a href="/guides/claim-sol-scam-check">Is that &quot;claim your SOL&quot; site a scam?</a><a href="/guides/sol-incinerator-alternative">Sol Incinerator alternative</a><a href="/guides/solana-wallet-drained">Solana wallet drained?</a><a href="/guides/pump-fun-sol-back">Get your SOL back from pump.fun</a><a href="/guides/solana-scam-token-check">Is this Solana token a scam?</a><a href="/guides/permanent-delegate">Token-2022 permanent delegate</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a></footer>
+</body>
+</html>

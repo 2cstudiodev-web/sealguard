@@ -2,6 +2,7 @@ import "./polyfill";
 import { Buffer } from "buffer";
 import { PublicKey } from "@solana/web3.js";
 import { looksSecret } from "./secret";
+import { shareScore } from "./share";
 import { fetchScanInput, rpc } from "./rpc";
 import { CLOSE_FEE_BPS, closeFee, rentOf, scan, shortKey, solWithUsd, type Action, type Finding, type ScanInput, type ScanResult, type Severity } from "./scan";
 import { buildTransaction, describeAction, describeFee, groupFee, packActions, TXS_PER_APPROVAL } from "./tx";
@@ -604,6 +605,11 @@ if (window.matchMedia?.("(pointer: coarse)").matches) {
   pasteBtn.addEventListener("click", () => $<HTMLInputElement>("#heroinput").focus());
 }
 $("#scanbtn").addEventListener("click", doScan);
+// Share my score: a card with the score (never the address); "My" only when this is the connected wallet.
+$("#sharebtn").addEventListener("click", () => {
+  if (!result) return;
+  void shareScore({ score: result.score, mine: Boolean(connected), reclaimLamports: result.reclaim.net }).catch(() => {});
+});
 $("#disconnect").addEventListener("click", doDisconnect);
 $("#navscan").addEventListener("click", () => { $("#navmenu").hidden = true; void doScan(); });
 document.addEventListener("click", (e) => { if (!$("#navmenu").hidden && !(e.target as HTMLElement).closest(".navacct")) $("#navmenu").hidden = true; });
