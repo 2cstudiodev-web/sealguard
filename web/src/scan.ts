@@ -85,6 +85,27 @@ export type ScanInput = {
   solPriceUsd?: number | null;
   /** pump.fun volume accounts (deposits that can be taken back). */
   pump?: PumpAcct[];
+  /** NFTs whose burn returns rent (Metaplex Token Metadata, not compressed, not frozen). */
+  nfts?: NftRent[];
+};
+
+/**
+ * A Metaplex NFT the owner could burn to take its rent back: the token account and the edition come back in full,
+ * the metadata account only up to its rent-exempt minimum (Metaplex keeps protocol fees stored there).
+ */
+export type NftRent = {
+  mint: string;
+  tokenAccount: string;
+  metadata: string;
+  edition: string;
+  /** Programmable NFTs also close a token record. */
+  tokenRecord?: string;
+  /** Metadata of the NFT's collection, when it is in one (a verified member's burn updates the collection). */
+  collectionMetadata?: string;
+  pnft: boolean;
+  name: string;
+  /** What the burn returns, in lamports. */
+  lamports: number;
 };
 
 export type Severity = "critical" | "high" | "medium" | "low" | "ok";
@@ -100,7 +121,8 @@ export type CheckId =
   | "phishing"
   | "stake"
   | "nonce"
-  | "pumpDeposit";
+  | "pumpDeposit"
+  | "nftRent";
 
 export type Action =
   | { kind: "revoke"; tokenAccount: string; mint: string; program: TokenProgram }
@@ -109,11 +131,13 @@ export type Action =
   | { kind: "burnClose"; tokenAccount: string; mint: string; program: TokenProgram; amount: bigint }
   | { kind: "withdrawNonce"; nonceAccount: string; lamports: number }
   /** Closes a pump.fun volume account: all `lamports` come back; the fee is charged on `rent` only, not on cashback. */
-  | { kind: "closePump"; program: PumpProgram; account: string; lamports: number; rent: number };
+  | { kind: "closePump"; program: PumpProgram; account: string; lamports: number; rent: number }
+  /** Burns a Metaplex NFT (BurnV1): every lamport comes back; the fee is charged on all of it (it is all rent). */
+  | { kind: "burnNft"; tokenAccount: string; mint: string; metadata: string; edition: string; tokenRecord?: string; collectionMetadata?: string; pnft: boolean; lamports: number };
 
 /** The rent deposit an action returns (what the close fee is charged on); 0 for actions that return none. */
 export function rentOf(a: Action): number {
-  return a.kind === "close" ? a.rent ?? a.lamports : a.kind === "closePump" ? a.rent : 0;
+  return a.kind === "close" ? a.rent ?? a.lamports : a.kind === "closePump" ? a.rent : a.kind === "burnNft" ? a.lamports : 0;
 }
 
 export type Finding = {
@@ -173,7 +197,7 @@ export function scorePenalty(findings: Finding[]): number {
   return total;
 }
 
-/** The lamports a token account's rent deposit is worth (0.00203928 SOL for a 165-byte account). */
+/** The rent deposit of a 165-byte token account opened before Solana lowered rent (SIMD-0437, Sept 2026); newer ones hold about 0.0015 SOL. Only a fallback: the real balance is read from the chain. */
 export const TOKEN_ACCOUNT_RENT_LAMPORTS = 2_039_280;
 
 /** SealGuard's fee on rent returned by closing empty accounts, in basis points (500 = 5%). Revoking, burning and nonce withdrawals are free. */
@@ -227,6 +251,13 @@ const BAIT_RE = /\b(claim|reward|rewards|airdrop|air-drop|bonus|voucher|prize|re
  * "$MUMU Reward | mumusol.org"). Descriptions are left alone: ordinary meme tokens put their website there, and
  * flagging those buried a real wallet under hundreds of false alarms (first live scan, 11 Nov 2026).
  */
+/** Shown on every NFT burn: it is never ticked by default. */
+export const NFT_KEEP = "Burning destroys the NFT for good. Tick it only if you're sure it's worthless to you.";
+
+export function burnNftAction(n: NftRent): Action {
+  return { kind: "burnNft", tokenAccount: n.tokenAccount, mint: n.mint, metadata: n.metadata, edition: n.edition, tokenRecord: n.tokenRecord, collectionMetadata: n.collectionMetadata, pnft: n.pnft, lamports: n.lamports };
+}
+
 export function looksLikePhishing(a: AssetMeta): string | null {
   if (a.priced) return null;
   const shown = `${a.name} ${a.symbol}`;
@@ -306,6 +337,8 @@ export function scan(input: ScanInput, opts: ScanOptions = {}): ScanResult {
   }
 
   const noted = new Set<string>();
+  const nftsByMint = new Map((input.nfts ?? []).map((n) => [n.mint, n] as const));
+  const phishingNfts = new Set<string>();
   for (const t of tokenAccounts) {
     const name = assetName(t.mint, assets);
     const mint = mints[t.mint];
@@ -409,15 +442,32 @@ export function scan(input: ScanInput, opts: ScanOptions = {}): ScanResult {
       const why = looksLikePhishing(a);
       if (why) {
         const nft = /NFT|V2_ASSET/i.test(a.kind) || (t.decimals === 0 && t.amount === 1n);
+        const burnable = nft ? nftsByMint.get(t.mint) : undefined;
+        if (burnable) phishingNfts.add(t.mint);
         f.push({
           check: "phishing", severity: "medium",
           title: `${a.name || shortKey(t.mint)} looks like a phishing airdrop`,
-          detail: `You didn't buy this: ${why}. Never open the link; the site asks for a signature that empties the wallet. ${nft ? "It's an NFT, so burn it from your wallet app (SealGuard only burns fungible tokens for now)." : "You can burn it and close the account to get the rent back."}`,
+          detail: `You didn't buy this: ${why}. Never open the link; the site asks for a signature that empties the wallet. ${nft ? (burnable ? `Burning it returns about ${solWithUsd(burnable.lamports, solPrice)} of rent to you${feeBps ? `, less SealGuard's ${feeBps / 100}% fee` : ""}.` : "It's an NFT, so burn it from your wallet app (SealGuard only burns fungible tokens for now).") : "You can burn it and close the account to get the rent back."}`,
           accounts: [t.address, t.mint],
-          action: nft || t.frozen ? undefined : { kind: "burnClose", tokenAccount: t.address, mint: t.mint, program: t.program, amount: t.amount },
+          action: burnable ? burnNftAction(burnable) : nft || t.frozen ? undefined : { kind: "burnClose", tokenAccount: t.address, mint: t.mint, program: t.program, amount: t.amount },
+          keep: burnable ? NFT_KEEP : undefined,
         });
       }
     }
+  }
+
+  // 7b. Other NFTs whose burn returns rent: listed, never ticked by default (an NFT may be worth something to you).
+  for (const n of input.nfts ?? []) {
+    if (phishingNfts.has(n.mint)) continue;
+    const name = n.name || shortKey(n.mint);
+    f.push({
+      check: "nftRent", severity: "ok",
+      title: `NFT you could burn: ${name}`,
+      detail: `Burning this NFT destroys it and returns about ${solWithUsd(n.lamports, solPrice)} of rent to you${feeBps ? `, less SealGuard's ${feeBps / 100}% fee` : ""}. Only burn NFTs you're sure are worthless to you; it can't be undone.`,
+      accounts: [n.tokenAccount, n.mint],
+      action: burnNftAction(n),
+      keep: NFT_KEEP,
+    });
   }
 
   // 8. Stake accounts: the withdrawer is the one who can take the SOL out.

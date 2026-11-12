@@ -54,6 +54,15 @@ export function packActions(actions: Action[], owner: PublicKey, opts: { treasur
   return out;
 }
 
+/** Metaplex Token Metadata program and the BurnV1 instruction (Burn = 41, BurnArgs::V1 = 0, amount u64). */
+export const TOKEN_METADATA_PROGRAM = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
+const SYSVAR_INSTRUCTIONS = new PublicKey("Sysvar1nstructions1111111111111111111111111");
+function burnNftData(): Buffer {
+  const d = Buffer.alloc(10);
+  d.writeUInt8(41, 0); d.writeUInt8(0, 1); d.writeBigUInt64LE(1n, 2);
+  return d;
+}
+
 /** The instructions one action needs, in order. */
 export function instructionsFor(a: Action, owner: PublicKey): TransactionInstruction[] {
   switch (a.kind) {
@@ -66,6 +75,28 @@ export function instructionsFor(a: Action, owner: PublicKey): TransactionInstruc
         createBurnInstruction(new PublicKey(a.tokenAccount), new PublicKey(a.mint), owner, a.amount, [], programId(a.program)),
         createCloseAccountInstruction(new PublicKey(a.tokenAccount), owner, owner, [], programId(a.program)),
       ];
+    case "burnNft": {
+      // BurnV1 accounts in order; an optional account left out is passed as the program id itself.
+      const none = { pubkey: TOKEN_METADATA_PROGRAM, isSigner: false, isWritable: false };
+      const w = (k: string) => ({ pubkey: new PublicKey(k), isSigner: false, isWritable: true });
+      return [new TransactionInstruction({
+        programId: TOKEN_METADATA_PROGRAM,
+        data: burnNftData(),
+        keys: [
+          { pubkey: owner, isSigner: true, isWritable: true },        // authority, receives the lamports
+          a.collectionMetadata ? w(a.collectionMetadata) : none,      // collection metadata
+          w(a.metadata),
+          w(a.edition),                                               // master edition
+          w(a.mint),
+          w(a.tokenAccount),
+          none, none, none, none,                                     // master edition / its mint / its token / edition marker (print editions only)
+          a.tokenRecord ? w(a.tokenRecord) : none,                    // token record (programmable NFTs)
+          { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+          { pubkey: SYSVAR_INSTRUCTIONS, isSigner: false, isWritable: false },
+          { pubkey: programId("token"), isSigner: false, isWritable: false },
+        ],
+      })];
+    }
     case "withdrawNonce":
       return [SystemProgram.nonceWithdraw({ noncePubkey: new PublicKey(a.nonceAccount), authorizedPubkey: owner, toPubkey: owner, lamports: a.lamports })];
     case "closePump": {
@@ -116,5 +147,6 @@ export function describeAction(a: Action): string {
     case "burnClose": return `Burn ${a.amount.toString()} base units of ${a.mint} and close its account`;
     case "withdrawNonce": return `Withdraw nonce account ${a.nonceAccount} (${a.lamports} lamports) to you`;
     case "closePump": return `Close your ${PUMP_PROGRAMS[a.program].name} volume account ${a.account} and return its ${a.lamports} lamports to you`;
+    case "burnNft": return `Burn NFT ${a.mint} and return its rent (${a.lamports} lamports) to you`;
   }
 }

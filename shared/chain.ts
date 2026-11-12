@@ -1,7 +1,7 @@
 // Reading everything scan() needs from the chain. Shared by the page (through the /rpc relay) and the Worker's
 // guard cron (straight to the RPC provider): the caller passes the function that makes one JSON-RPC call.
 import { PublicKey } from "@solana/web3.js";
-import { PUMP_PROGRAMS, type AssetMeta, type MintInfo, type NonceAcct, type PumpAcct, type PumpProgram, type ScanInput, type StakeAcct, type TokenAcct } from "../web/src/scan";
+import { PUMP_PROGRAMS, type NftRent, type AssetMeta, type MintInfo, type NonceAcct, type PumpAcct, type PumpProgram, type ScanInput, type StakeAcct, type TokenAcct } from "../web/src/scan";
 
 export const TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 export const TOKEN_2022_PROGRAM = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
@@ -84,6 +84,54 @@ function parseAsset(a: any): AssetMeta {
     priced: Boolean(a.token_info?.price_info?.price_per_token),
     priceUsd: typeof a.token_info?.price_info?.price_per_token === "number" ? a.token_info.price_info.price_per_token : null,
   };
+}
+
+const METADATA_PROGRAM = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
+const pda = (seeds: (Uint8Array | string)[]) =>
+  PublicKey.findProgramAddressSync(seeds.map((x) => (typeof x === "string" ? new TextEncoder().encode(x) : x)), METADATA_PROGRAM)[0].toBase58();
+
+/**
+ * Metaplex NFTs (not compressed: those return nothing) the owner holds in an unfrozen token account, with what a
+ * burn would return: token account and edition in full, metadata up to its rent-exempt minimum. Print editions are
+ * left out (their burn needs the master edition's accounts too).
+ */
+async function nftRents(rpc: RpcCall, tokenAccounts: TokenAcct[], raw: any[], onProgress: Progress): Promise<NftRent[]> {
+  const byMint = new Map(tokenAccounts.filter((t) => t.amount === 1n && t.decimals === 0 && !t.frozen).map((t) => [t.mint, t] as const));
+  const picked = raw.filter((a) => byMint.has(a.id) && !a.ownership?.frozen && /^(NonFungible|ProgrammableNonFungible)$/.test(String(a.content?.metadata?.token_standard ?? ""))).slice(0, 300);
+  if (!picked.length) return [];
+  onProgress("Checking which NFTs hold rent");
+  const rows = picked.map((a) => {
+    const mint = new PublicKey(a.id).toBytes(), t = byMint.get(a.id)!;
+    const pnft = a.content.metadata.token_standard === "ProgrammableNonFungible";
+    const coll = (a.grouping ?? []).find((g: any) => g.group_key === "collection")?.group_value;
+    return {
+      a, t, pnft,
+      metadata: pda(["metadata", METADATA_PROGRAM.toBytes(), mint]),
+      edition: pda(["metadata", METADATA_PROGRAM.toBytes(), mint, "edition"]),
+      tokenRecord: pnft ? pda(["metadata", METADATA_PROGRAM.toBytes(), mint, "token_record", new PublicKey(t.address).toBytes()]) : undefined,
+      collectionMetadata: coll ? pda(["metadata", METADATA_PROGRAM.toBytes(), new PublicKey(coll).toBytes()]) : undefined,
+    };
+  });
+  const keys = rows.flatMap((r) => [r.metadata, r.edition, ...(r.tokenRecord ? [r.tokenRecord] : [])]);
+  const info = new Map<string, { lamports: number; space: number } | null>();
+  for (let i = 0; i < keys.length; i += 100) {
+    const chunk = keys.slice(i, i + 100);
+    const v: any = await rpc("getMultipleAccounts", [chunk, { encoding: "base64", dataSlice: { offset: 0, length: 0 } }]);
+    (v?.value ?? []).forEach((x: any, k: number) => info.set(chunk[k], x ? { lamports: x.lamports, space: Number(x.space ?? 0) } : null));
+  }
+  const minFor = new Map<number, number>();
+  const minimum = async (space: number) => {
+    if (!minFor.has(space)) minFor.set(space, Number(await rpc("getMinimumBalanceForRentExemption", [space])));
+    return minFor.get(space)!;
+  };
+  const out: NftRent[] = [];
+  for (const r of rows) {
+    const md = info.get(r.metadata), ed = info.get(r.edition), tr = r.tokenRecord ? info.get(r.tokenRecord) : null;
+    if (!md || !ed || (r.tokenRecord && !tr)) continue; // not a standard burnable NFT
+    const lamports = (r.t.lamports ?? 0) + ed.lamports + (tr?.lamports ?? 0) + Math.min(md.lamports, await minimum(md.space));
+    out.push({ mint: r.a.id, tokenAccount: r.t.address, metadata: r.metadata, edition: r.edition, tokenRecord: r.tokenRecord, collectionMetadata: r.collectionMetadata, pnft: r.pnft, name: String(r.a.content?.metadata?.name ?? ""), lamports });
+  }
+  return out;
 }
 
 export type Progress = (step: string) => void;
@@ -184,12 +232,13 @@ export async function fetchScanInput(rpc: RpcCall, wallet: string, onProgress: P
 
   onProgress("Reading token names (DAS)");
   const assets: Record<string, AssetMeta> = {};
+  const nftRaw: any[] = [];
   let dasFailed = false;
   try {
     for (let page = 1; page <= 5; page++) {
       const r = await rpc<any>("getAssetsByOwner", { ownerAddress: wallet, page, limit: 1000, displayOptions: { showFungible: true, showZeroBalance: false } });
       const items: any[] = r?.items ?? [];
-      for (const a of items) assets[a.id] = parseAsset(a);
+      for (const a of items) { assets[a.id] = parseAsset(a); if (/^(V1_NFT|ProgrammableNFT)$/.test(String(a.interface)) && !a.compression?.compressed) nftRaw.push(a); }
       if (items.length < 1000) break;
     }
   } catch {
@@ -293,5 +342,7 @@ export async function fetchScanInput(rpc: RpcCall, wallet: string, onProgress: P
     warnings.push(`pump.fun deposits couldn't be checked (${e?.message || e}).`);
   }
 
-  return { wallet, walletOwner, tokenAccounts, mints, assets, stakes, nonces, warnings, solPriceUsd, pump };
+  let nfts: NftRent[] = [];
+  try { nfts = await nftRents(rpc, tokenAccounts, nftRaw, onProgress); } catch { warnings.push("NFTs that hold rent couldn't be read this time."); }
+  return { wallet, walletOwner, tokenAccounts, mints, assets, stakes, nonces, warnings, solPriceUsd, pump, nfts };
 }

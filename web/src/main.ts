@@ -258,7 +258,7 @@ function renderReport(): void {
 
 // ---------- the card beside the headline: an example until a wallet is scanned, then that wallet's own report ----------
 const HERO_EXAMPLE = $(".herocard").innerHTML;
-const HERO_BUTTON: Record<Action["kind"], string> = { revoke: "Revoke", close: "Claim", burnClose: "Burn", withdrawNonce: "Withdraw", closePump: "Claim" };
+const HERO_BUTTON: Record<Action["kind"], string> = { revoke: "Revoke", close: "Claim", burnClose: "Burn", withdrawNonce: "Withdraw", closePump: "Claim", burnNft: "Burn" };
 /** "0.0412" for small amounts, "1.25" for bigger ones: the card has little room. */
 const shortSol = (lamports: number) => { const s = lamports / 1e9; return (s >= 1 ? s.toFixed(2) : s >= 0.01 ? s.toFixed(3) : s.toFixed(4)).replace(/\.?0+$/, ""); };
 
@@ -333,7 +333,7 @@ function applyPendingFix(): void {
   result.findings.forEach((f, i) => {
     if (!f.action) return;
     // ?fix= selects only the action on that exact account, and never a burn that is left unticked on purpose.
-    if ((p.claim && f.action.kind === "close" && !f.keep) || (p.fix && actionAccount(f.action) === p.fix && !(f.action.kind === "burnClose" && f.keep))) { selected.add(i); n++; }
+    if ((p.claim && f.action.kind === "close" && !f.keep) || (p.fix && actionAccount(f.action) === p.fix && !((f.action.kind === "burnClose" || f.action.kind === "burnNft") && f.keep))) { selected.add(i); n++; }
   });
   restoreChecks();
   renderFixBar();
@@ -412,6 +412,7 @@ function actionLabel(a: Action): string {
     case "burnClose": return "Burn it and close the account";
     case "withdrawNonce": return "Withdraw the nonce account to my wallet";
     case "closePump": return "Close it and take the SOL back";
+    case "burnNft": return "Burn the NFT and take the SOL back";
   }
 }
 
@@ -433,7 +434,7 @@ function renderFixBar(): void {
     : bps ? `Closing empty accounts returns ${solWithUsd(closing - closeFee(closing, bps), price)} to you after SealGuard's ${bps / 100}% fee (${solWithUsd(closeFee(closing, bps), price)}). Revoking and burning are free. Free for wallets with the guard.`
     : `Closing empty accounts returns ${solWithUsd(closing, price)} to you. No fee: this wallet has the guard.`;
   list.hidden = true;
-  const burning = acts.some((a) => a.kind === "burnClose");
+  const burning = acts.some((a) => a.kind === "burnClose" || a.kind === "burnNft");
   $("#burnackrow").hidden = !burning;
   if (!burning) $<HTMLInputElement>("#burnack").checked = false;
   syncFixButton();
