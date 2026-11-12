@@ -1,6 +1,7 @@
 import "./polyfill";
 import { Buffer } from "buffer";
 import { PublicKey } from "@solana/web3.js";
+import { looksSecret } from "./secret";
 import { fetchScanInput, rpc } from "./rpc";
 import { CLOSE_FEE_BPS, closeFee, rentOf, scan, shortKey, solWithUsd, type Action, type Finding, type ScanInput, type ScanResult, type Severity } from "./scan";
 import { buildTransaction, describeAction, describeFee, groupFee, packActions, TXS_PER_APPROVAL } from "./tx";
@@ -118,9 +119,23 @@ async function autoReconnect(): Promise<void> {
   if (c && !connected && !address) await onConnected(c);
 }
 
-function doScanAddress(ev: Event): void {
+const SECRET_WARNING = "This looks like a seed phrase or private key. Don't paste it anywhere: anyone who has it can take everything in the wallet. Nothing was sent; the box has been cleared.";
+
+/** A secret in either address box: wipe both and say so. Runs in the browser only; nothing has been sent. */
+function stopSecret(raw: string): boolean {
+  if (!looksSecret(raw)) return false;
+  $<HTMLInputElement>("#addrinput").value = "";
+  $<HTMLInputElement>("#heroinput").value = "";
+  setStatus(SECRET_WARNING, "err");
+  $("#status").scrollIntoView({ block: "center", behavior: "smooth" });
+  return true;
+}
+
+/** Scans what's in the given address box (the header search or the hero box), read-only. */
+function doScanAddress(ev: Event, input: HTMLInputElement = $<HTMLInputElement>("#addrinput")): void {
   ev.preventDefault();
-  const raw = $<HTMLInputElement>("#addrinput").value.trim();
+  const raw = input.value.trim();
+  if (stopSecret(raw)) return;
   try {
     const pk = new PublicKey(raw);
     if (!PublicKey.isOnCurve(pk.toBytes())) throw new Error("not a wallet");
@@ -521,7 +536,24 @@ $("#navconnect").addEventListener("click", navConnect);
 $("#pickclose").addEventListener("click", closeWalletPicker);
 $("#walletpick").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeWalletPicker(); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeWalletPicker(); closeUpsell(); } });
-$("#addrform").addEventListener("submit", doScanAddress);
+$("#addrform").addEventListener("submit", (e) => doScanAddress(e));
+$("#heroform").addEventListener("submit", (e) => doScanAddress(e, $<HTMLInputElement>("#heroinput")));
+for (const id of ["#addrinput", "#heroinput"]) $<HTMLInputElement>(id).addEventListener("input", (e) => { stopSecret((e.target as HTMLInputElement).value); });
+$("#heroconnect").addEventListener("click", navConnect);
+// Paste: one tap on a phone. Shown only where the browser can read the clipboard; if it can't, the box gets focus.
+if (navigator.clipboard?.readText) {
+  const pasteBtn = $<HTMLButtonElement>("#heropaste");
+  pasteBtn.hidden = false;
+  pasteBtn.addEventListener("click", async () => {
+    const box = $<HTMLInputElement>("#heroinput");
+    let text = "";
+    try { text = (await navigator.clipboard.readText()).trim(); } catch { box.focus(); return; }
+    if (!text) { box.focus(); return; }
+    if (stopSecret(text)) return;
+    box.value = text;
+    doScanAddress(new Event("submit"), box);
+  });
+}
 $("#scanbtn").addEventListener("click", doScan);
 $("#disconnect").addEventListener("click", doDisconnect);
 $("#navscan").addEventListener("click", () => { $("#navmenu").hidden = true; void doScan(); });
