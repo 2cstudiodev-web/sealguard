@@ -47,7 +47,18 @@ function parseTokenAccounts(list: any[], program: "token" | "token2022"): TokenA
       frozen: info.state === "frozen",
       isNative: Boolean(info.isNative),
       lamports: typeof x.account?.lamports === "number" ? x.account.lamports : undefined,
+      closeBlocked: closeBlockedBy(info.extensions),
     };
+  });
+}
+
+/** Token-2022 account extensions that stop a zero-balance account from being closed. */
+function closeBlockedBy(exts: unknown): boolean {
+  if (!Array.isArray(exts)) return false;
+  return exts.some((e: any) => {
+    if (e?.extension === "transferFeeAmount") return BigInt(String(e?.state?.withheldAmount ?? "0")) > 0n;
+    // Any confidential-transfer state may hold a pending or encrypted balance we can't read: leave the account alone.
+    return e?.extension === "confidentialTransferAccount";
   });
 }
 
@@ -196,6 +207,23 @@ export async function fetchScanInput(rpc: RpcCall, wallet: string, onProgress: P
       } catch {
         break;
       }
+    }
+  }
+
+  // Second price source for tokens you hold that DAS has no price for: a token Jupiter can price trades somewhere,
+  // so it must never be offered as a worthless phishing burn. If Jupiter can't be reached, nothing changes.
+  const unpriced = [...new Set(tokenAccounts.filter((t) => t.amount > 0n && assets[t.mint] && !assets[t.mint].priced).map((t) => t.mint))].slice(0, 300);
+  for (let i = 0; i < unpriced.length; i += 50) {
+    try {
+      const r = await fetch("https://lite-api.jup.ag/price/v3?ids=" + unpriced.slice(i, i + 50).join(","), { signal: AbortSignal.timeout(8000) });
+      if (!r.ok) break;
+      const j: any = await r.json();
+      for (const m of unpriced.slice(i, i + 50)) {
+        const p = Number(j?.[m]?.usdPrice);
+        if (p > 0) { assets[m].priced = true; assets[m].priceUsd = assets[m].priceUsd ?? p; }
+      }
+    } catch {
+      break;
     }
   }
 

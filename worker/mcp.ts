@@ -136,14 +136,14 @@ export function approvals(wallet: string, r: ScanResult) {
 /** One call per IP-hash and hour, plus a daily total across everyone. Throws ToolError when over. */
 async function countCall(env: GuardEnv, ip: string, now: number): Promise<void> {
   const hour = Math.floor(now / HOUR_MS);
-  const key = await ipKey(env.SESSION_SECRET, ip);
+  const key = await ipKey(env.SESSION_SECRET, ip.includes(":") ? ip.split(":").slice(0, 4).join(":") : ip); // IPv6: per /64
   const day = Math.floor(now / (24 * HOUR_MS));
   await env.DB.prepare("DELETE FROM mcp_usage WHERE hour < ?").bind(hour - 48).run();
-  const mine = await env.DB.prepare("SELECT n FROM mcp_usage WHERE hour = ? AND ip = ?").bind(hour, key).first<{ n: number }>();
-  if ((mine?.n ?? 0) >= MCP_CALLS_PER_HOUR) throw new ToolError(`SealGuard allows ${MCP_CALLS_PER_HOUR} checks an hour from one connection. Try again later, or open ${ORIGIN} in a browser.`);
+  // Count first and read the new total in the same statement, so parallel calls can't all slip under the limit.
+  const mine = await env.DB.prepare("INSERT INTO mcp_usage (hour, ip, n) VALUES (?, ?, 1) ON CONFLICT(hour, ip) DO UPDATE SET n = n + 1 RETURNING n").bind(hour, key).first<{ n: number }>();
+  if ((mine?.n ?? 1) > MCP_CALLS_PER_HOUR) throw new ToolError(`SealGuard allows ${MCP_CALLS_PER_HOUR} checks an hour from one connection. Try again later, or open ${ORIGIN} in a browser.`);
   const all = await env.DB.prepare("SELECT COALESCE(SUM(n), 0) AS n FROM mcp_usage WHERE hour >= ?").bind(day * 24).first<{ n: number }>();
-  if ((all?.n ?? 0) >= MCP_CALLS_PER_DAY) throw new ToolError(`SealGuard's AI checks are busy today. Open ${ORIGIN} in a browser instead.`);
-  await env.DB.prepare("INSERT INTO mcp_usage (hour, ip, n) VALUES (?, ?, 1) ON CONFLICT(hour, ip) DO UPDATE SET n = n + 1").bind(hour, key).run();
+  if ((all?.n ?? 0) > MCP_CALLS_PER_DAY) throw new ToolError(`SealGuard's AI checks are busy today. Open ${ORIGIN} in a browser instead.`);
 }
 async function ipKey(secret: string, ip: string): Promise<string> {
   const h = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${secret}:mcp:${ip}`));

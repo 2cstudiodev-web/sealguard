@@ -13,6 +13,8 @@ export const TREASURY = new PublicKey("B3BCTvv1LUpXZ2PpB4HeppxuSsS8Y1GSjYYG6NB6x
 export const MAX_ACTIONS_PER_TX = 10;
 /** Solana's packet limit for a signed transaction, and the most actions we put in one (compute stays well under 200k). */
 export const TX_SIZE_LIMIT = 1232;
+/** Room left for instructions some wallets add before signing (priority fee, Lighthouse guards). */
+export const TX_HEADROOM = 150;
 export const MAX_ACTIONS_PACKED = 26;
 /** Transactions a wallet is asked to approve at once. */
 export const TXS_PER_APPROVAL = 20;
@@ -35,7 +37,7 @@ export function batchActions(actions: Action[], max = MAX_ACTIONS_PER_TX): Actio
 export function packActions(actions: Action[], owner: PublicKey, opts: { treasury?: PublicKey; feeBps?: number } = {}): Action[][] {
   // web3.js refuses to serialize an oversized transaction (it throws), which also means "doesn't fit".
   const fits = (g: Action[]) => {
-    try { return buildTransaction(g, owner, "11111111111111111111111111111111", 0, opts).serialize({ requireAllSignatures: false, verifySignatures: false }).length <= TX_SIZE_LIMIT; } catch { return false; }
+    try { return buildTransaction(g, owner, "11111111111111111111111111111111", 0, opts).serialize({ requireAllSignatures: false, verifySignatures: false }).length <= TX_SIZE_LIMIT - TX_HEADROOM; } catch { return false; }
   };
   const out: Action[][] = [];
   let cur: Action[] = [];

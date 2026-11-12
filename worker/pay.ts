@@ -79,7 +79,10 @@ export type PaymentCheck = { ok: true } | { ok: false; reason: string };
 export function verifyPaymentTx(tx: ParsedTx | null, expect: ExpectedPayment): PaymentCheck {
   if (!tx || !tx.meta) return { ok: false, reason: "not_found" };
   if (tx.meta.err) return { ok: false, reason: "tx_failed" };
-  if (expect.paidBy !== undefined && typeof tx.blockTime === "number" && tx.blockTime * 1000 > expect.paidBy) return { ok: false, reason: "price_expired" };
+  if (expect.paidBy !== undefined) {
+    if (typeof tx.blockTime !== "number") return { ok: false, reason: "pending" };
+    if (tx.blockTime * 1000 > expect.paidBy) return { ok: false, reason: "price_expired" };
+  }
   const keys = tx.transaction.message.accountKeys;
   if (!keys.some((k) => k.signer && k.pubkey === expect.payer)) return { ok: false, reason: "wrong_payer" };
   const memos = tx.transaction.message.instructions

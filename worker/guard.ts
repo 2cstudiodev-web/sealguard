@@ -3,7 +3,7 @@
 import { fetchScanInput, rpcOver } from "../shared/chain";
 import { claimText, diffWatch, formatAlerts, watchState, weeklyText, type WatchState } from "../shared/watch";
 import { solWithUsd } from "../web/src/scan";
-import { bearer, checkSignIn, FRESH_SIGNIN_MS, issueToken, makeNonce, siwsMessage, verifySession, verifyToken, webhookSecret } from "./auth";
+import { bearer, checkSignIn, FRESH_SIGNIN_MS, issueToken, makeNonce, safeEqualText, siwsMessage, verifySession, verifyToken, webhookSecret } from "./auth";
 import { buildQuotes, extendPaidUntil, GUARD_USD, jupiterPrices, TEST_QUOTES, PAY_SLACK_MS, PAY_TOKENS, QUOTE_TTL_MS, SKR_MINT, verifyPaymentTx, WSOL_MINT, type ParsedTx, type PayToken } from "./pay";
 import { esc, sendTelegram, setWebhook, startCode } from "./telegram";
 import { cleanSource, logScan, SCAN_VIA, validWallet, type ScanVia } from "./scanlog";
@@ -16,6 +16,8 @@ export interface GuardEnv {
   TELEGRAM_BOT_TOKEN?: string;
   TELEGRAM_BOT_USERNAME?: string;
   PUBLIC_URL?: string;
+  /** Workers Rate Limiting (wrangler.jsonc "ratelimits"): stats, sign-in, quotes, Telegram replies. */
+  RL_API?: { limit(o: { key: string }): Promise<{ success: boolean }> };
 }
 
 export class ApiError extends Error {
@@ -30,8 +32,25 @@ export const CHECKS_PER_RUN = 30;
 export const CHECK_INTERVAL_MS = 55 * 60 * 1000;
 
 async function readJson(request: Request): Promise<any> {
-  try { return await request.json(); } catch { return {}; }
+  try { const b = await request.json(); return b && typeof b === "object" && !Array.isArray(b) ? b : {}; } catch { return {}; }
 }
+
+/** A signed sign-in works once: the nonce is recorded until it would have expired anyway. */
+async function useNonce(env: GuardEnv, nonce: string, now: number): Promise<boolean> {
+  const r = await env.DB.prepare("INSERT OR IGNORE INTO used_nonces (nonce, exp) VALUES (?, ?)").bind(nonce, now + 24 * 3_600_000).run();
+  return (r.meta?.changes ?? 0) > 0;
+}
+
+/** Workers Rate Limiting, per caller; true when allowed (and when the binding isn't there, e.g. in tests). */
+export async function allowed(limiter: { limit(o: { key: string }): Promise<{ success: boolean }> } | undefined, key: string): Promise<boolean> {
+  if (!limiter) return true;
+  try { return (await limiter.limit({ key })).success; } catch { return true; }
+}
+const callerKey = (request: Request) => {
+  const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
+  // IPv6: one /64 is one customer.
+  return ip.includes(":") ? ip.split(":").slice(0, 4).join(":") : ip;
+};
 
 function randomCode(len = 24): string {
   const alphabet = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -59,7 +78,7 @@ async function requireFreshWallet(env: GuardEnv, request: Request, body: any, no
   const p = body?.proof;
   if (p && typeof p.nonce === "string" && typeof p.issuedAt === "string" && typeof p.signature === "string") {
     const r = await checkSignIn(env.SESSION_SECRET, { wallet: s.wallet, nonce: p.nonce, issuedAt: p.issuedAt, signature: p.signature }, now);
-    if (r.ok) return { wallet: s.wallet, token: issueToken(env.SESSION_SECRET, s.wallet, now) };
+    if (r.ok && (await useNonce(env, p.nonce, now))) return { wallet: s.wallet, token: issueToken(env.SESSION_SECRET, s.wallet, now) };
   }
   throw new ApiError(403, "resign", "Sign once more to change where alerts go.");
 }
@@ -92,6 +111,8 @@ export async function handleApi(request: Request, env: GuardEnv, path: string, n
     // Daily counters from the page (no session): how many scans and fixes, what was closed. A scan also leaves a
     // record with its address and result (worker/scanlog.ts; privacy notice, "Scanning").
     if (path === "/api/stat" && method === "POST") {
+      // Over the limit: quietly not counted (the page never shows this call's answer).
+      if (!(await allowed(env.RL_API, callerKey(request)))) return json({ ok: true });
       const b = await readJson(request);
       const kind = b.kind === "scan" || b.kind === "fix" ? b.kind : null;
       if (!kind) throw new ApiError(400, "bad_stat");
@@ -112,6 +133,9 @@ export async function handleApi(request: Request, env: GuardEnv, path: string, n
       return json({ ok: true });
     }
 
+    if ((path === "/api/auth/nonce" || path === "/api/auth/verify" || path === "/api/guard/quote") && method === "POST" && !(await allowed(env.RL_API, callerKey(request)))) {
+      throw new ApiError(429, "slow_down", "Too many requests");
+    }
     if (path === "/api/auth/nonce" && method === "POST") {
       const { wallet } = await readJson(request);
       if (!isWallet(wallet)) throw new ApiError(400, "bad_wallet");
@@ -124,6 +148,7 @@ export async function handleApi(request: Request, env: GuardEnv, path: string, n
       if (!isWallet(b.wallet) || typeof b.nonce !== "string" || typeof b.issuedAt !== "string" || typeof b.signature !== "string") throw new ApiError(400, "bad_request");
       const r = await checkSignIn(env.SESSION_SECRET, { wallet: b.wallet, nonce: b.nonce, issuedAt: b.issuedAt, signature: b.signature }, now);
       if (!r.ok) throw new ApiError(401, r.reason);
+      if (!(await useNonce(env, b.nonce, now))) throw new ApiError(401, "nonce_used", "Sign in again");
       await env.DB.prepare("INSERT INTO guards (wallet, created_at) VALUES (?, ?) ON CONFLICT(wallet) DO NOTHING").bind(r.wallet, now).run();
       return json({ token: issueToken(env.SESSION_SECRET, r.wallet, now), wallet: r.wallet });
     }
@@ -189,7 +214,8 @@ export async function handleApi(request: Request, env: GuardEnv, path: string, n
       const q = await env.DB.prepare("SELECT * FROM quotes WHERE id = ? AND token = ? AND wallet = ?").bind(quoteId, token, wallet).first<{ base_units: string; memo: string; expires_at: number; used: number; usd: string }>();
       if (!q) throw new ApiError(400, "bad_quote");
       if (q.used) throw new ApiError(409, "quote_used");
-      if (q.expires_at + PAY_SLACK_MS < now) throw new ApiError(400, "quote_expired", "Ask for a new price and pay again");
+      // No request-time expiry: a payment that landed in time counts even if the page comes back late (the
+      // transaction's own block time is checked against the quote below).
       const rpc = rpcOver(env.RPC_URL, 20_000);
       let tx: ParsedTx | null = null;
       try {
@@ -200,7 +226,13 @@ export async function handleApi(request: Request, env: GuardEnv, path: string, n
         throw new ApiError(503, "chain_busy", "Solana lookups are busy; try again in a few seconds");
       }
       const check = verifyPaymentTx(tx, { payer: wallet, treasury: env.TREASURY, token, baseUnits: BigInt(q.base_units), memo: q.memo, paidBy: q.expires_at + PAY_SLACK_MS });
-      if (!check.ok) throw new ApiError(check.reason === "not_found" ? 404 : 400, check.reason);
+      if (!check.ok) {
+        if (check.reason === "pending") throw new ApiError(503, "chain_busy", "The payment is still confirming; try again in a few seconds");
+        throw new ApiError(check.reason === "not_found" ? 404 : 400, check.reason);
+      }
+      // Count the transaction by its first signature, whichever of its signatures the page sent.
+      const first = (tx as any)?.transaction?.signatures?.[0];
+      if (typeof first === "string" && first !== signature) throw new ApiError(400, "bad_signature", "Send the transaction's first signature");
       const g = await guardRow(env, wallet);
       const paidUntil = extendPaidUntil(g?.paid_until ?? null, now);
       // The baseline is the wallet as it is right now: the guard reports changes from here on.
@@ -216,19 +248,19 @@ export async function handleApi(request: Request, env: GuardEnv, path: string, n
 
     // Telegram → us. The secret header proves it's Telegram; /start <code> links a chat to a wallet.
     if (path === "/api/telegram" && method === "POST") {
-      if (!env.TELEGRAM_BOT_TOKEN || request.headers.get("x-telegram-bot-api-secret-token") !== webhookSecret(env.TELEGRAM_BOT_TOKEN)) return new Response("forbidden", { status: 403 });
+      if (!env.TELEGRAM_BOT_TOKEN || !safeEqualText(request.headers.get("x-telegram-bot-api-secret-token") ?? "", webhookSecret(env.TELEGRAM_BOT_TOKEN))) return new Response("forbidden", { status: 403 });
       const update = await readJson(request);
       const s = startCode(update);
       if (s) {
         const g = await env.DB.prepare("SELECT wallet, link_code_expires, telegram_chat_id FROM guards WHERE link_code = ?").bind(s.code).first<{ wallet: string; link_code_expires: number; telegram_chat_id: string | null }>();
         if (g && g.link_code_expires > now) {
           if (g.telegram_chat_id && g.telegram_chat_id !== s.chatId) await sendTelegram(env.TELEGRAM_BOT_TOKEN, g.telegram_chat_id, movedText(g.wallet)).catch(() => {});
-          await env.DB.prepare("UPDATE guards SET telegram_chat_id = ?, link_code = NULL, link_code_expires = NULL WHERE wallet = ?").bind(s.chatId, g.wallet).run();
+          await env.DB.prepare("UPDATE guards SET telegram_chat_id = ?, link_code = NULL, link_code_expires = NULL, baseline = NULL WHERE wallet = ?").bind(s.chatId, g.wallet).run();
           await sendTelegram(env.TELEGRAM_BOT_TOKEN, s.chatId, `✅ Linked to wallet <code>${esc(g.wallet)}</code>. SealGuard will message you here when something in that wallet changes for the worse.`);
         } else {
           await sendTelegram(env.TELEGRAM_BOT_TOKEN, s.chatId, "That link code is unknown or has expired. Open https://guard.2cstudio.app, sign in and press Link Telegram again.");
         }
-      } else if (update?.message?.chat?.id) {
+      } else if (update?.message?.chat?.id && (await allowed(env.RL_API, `tg:${update.message.chat.id}`))) {
         await sendTelegram(env.TELEGRAM_BOT_TOKEN, String(update.message.chat.id), "This bot only sends SealGuard alerts. Link it from https://guard.2cstudio.app.");
       }
       return new Response("ok");
@@ -316,6 +348,19 @@ export async function sendDigests(env: GuardEnv, g: GuardRow, next: WatchState, 
 }
 
 /** The cron: make sure the webhook is set, send renewal notices, then re-scan the guards whose turn it is. */
+/** Housekeeping with the cron: spent quotes, used sign-in nonces, and sign-ins that never became a guard. */
+export async function pruneOld(env: GuardEnv, now: number): Promise<void> {
+  try {
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM quotes WHERE expires_at < ?").bind(now - 7 * 86_400_000),
+      env.DB.prepare("DELETE FROM used_nonces WHERE exp < ?").bind(now),
+      env.DB.prepare("DELETE FROM guards WHERE paid_until IS NULL AND telegram_chat_id IS NULL AND created_at < ? AND wallet NOT IN (SELECT wallet FROM payments)").bind(now - 30 * 86_400_000),
+    ]);
+  } catch (e) {
+    console.error("prune", e);
+  }
+}
+
 export async function runGuards(env: GuardEnv, now: number, fetchFn: typeof fetch = (i, o) => fetch(i, o)): Promise<{ checked: number; alerted: number }> {
   if (env.TELEGRAM_BOT_TOKEN && env.PUBLIC_URL) {
     const want = webhookSecret(env.TELEGRAM_BOT_TOKEN) + "@" + env.PUBLIC_URL;

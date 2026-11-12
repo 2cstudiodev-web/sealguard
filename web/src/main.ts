@@ -180,12 +180,16 @@ async function doDisconnect(): Promise<void> {
   renderHeroCard();
 }
 
+let scanSeq = 0;
 async function doScan(): Promise<void> {
   if (!address) return;
+  // A slower scan of a previous wallet must not land on top of the current one.
+  const seq = ++scanSeq, scanned = address;
   $("#scanbtn").toggleAttribute("disabled", true);
   $("#report").hidden = true;
   try {
-    const input = await fetchScanInput(address, (s) => setStatus(`${s}…`, "busy"));
+    const input = await fetchScanInput(scanned, (s) => { if (seq === scanSeq) setStatus(`${s}…`, "busy"); });
+    if (seq !== scanSeq || scanned !== address) return;
     lastInput = input;
     result = scan(input, { closeFeeBps: feeBps() });
     void reportStat("scan", {
@@ -199,7 +203,7 @@ async function doScan(): Promise<void> {
     applyPendingFix();
     $("#report").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (e: any) {
-    setStatus(`Scan failed: ${e?.message || e}`, "err");
+    if (seq === scanSeq) setStatus(`Scan failed: ${e?.message || e}`, "err");
   } finally {
     $("#scanbtn").toggleAttribute("disabled", false);
   }
@@ -284,7 +288,7 @@ function renderHeroCard(): void {
   }
   if (empties.length) {
     const suggested = empties.filter(({ f }) => !f.keep).map(({ i }) => i);
-    rows.push({ icon: "sol", iconText: "◎", title: `${empties.length} empty account${empties.length === 1 ? "" : "s"}`, small: `${shortSol(r.reclaim.lamports)} SOL rent`, button: "Claim", kind: "go", idx: suggested.length ? suggested : empties.map(({ i }) => i) });
+    rows.push({ icon: "sol", iconText: "◎", title: `${empties.length} empty account${empties.length === 1 ? "" : "s"}`, small: `${shortSol(r.reclaim.lamports)} SOL rent`, button: suggested.length ? "Claim" : "View", kind: suggested.length ? "go" : "", idx: suggested });
   }
   for (const { f, i } of pumps) {
     rows.push({ icon: "sol", iconText: "◎", title: `${f.action?.kind === "closePump" && f.action.program === "pumpswap" ? "PumpSwap" : "pump.fun"} deposit`, small: `${shortSol(f.action?.kind === "closePump" ? f.action.lamports : 0)} SOL`, button: "Claim", kind: "go", idx: [i] });
@@ -328,11 +332,16 @@ function applyPendingFix(): void {
   let n = 0;
   result.findings.forEach((f, i) => {
     if (!f.action) return;
-    if ((p.claim && f.action.kind === "close" && !f.keep) || (p.fix && f.accounts.includes(p.fix))) { selected.add(i); n++; }
+    // ?fix= selects only the action on that exact account, and never a burn that is left unticked on purpose.
+    if ((p.claim && f.action.kind === "close" && !f.keep) || (p.fix && actionAccount(f.action) === p.fix && !(f.action.kind === "burnClose" && f.keep))) { selected.add(i); n++; }
   });
   restoreChecks();
   renderFixBar();
   setStatus(n ? "Selected from your SealGuard message. Check it and press Fix selected." : "Nothing from that link needs fixing any more.");
+}
+
+function actionAccount(a: Action): string {
+  return a.kind === "withdrawNonce" ? a.nonceAccount : a.kind === "closePump" ? a.account : a.tokenAccount;
 }
 
 /** Findings of one check and severity are shown as one card once there are four or more (a whale wallet can have hundreds). */
@@ -375,7 +384,7 @@ function groupCard(fs: Finding[], idx: number[]): string {
   const off = connected ? "" : " disabled";
   const items = idx.map((i) => {
     const f = fs[i];
-    const links = f.accounts.map((a) => `<a href="${explorer(a)}" target="_blank" rel="noopener">${shortKey(a)}</a>`).join(" · ");
+    const links = f.accounts.map((a) => `<a href="${esc(explorer(a))}" target="_blank" rel="noopener">${esc(shortKey(a))}</a>`).join(" · ");
     const box = f.action ? `<input type="checkbox" class="itembox" data-i="${i}"${off}> ` : "";
     const why = f.keep ? ` <span class="keep">Left unticked: ${esc(f.keep)}</span>` : "";
     return `<li><label>${box}${esc(f.title)}</label> · ${links}${why}</li>`;
@@ -391,7 +400,7 @@ function groupCard(fs: Finding[], idx: number[]): string {
 }
 
 function card(f: Finding, i: number): string {
-  const links = f.accounts.map((a) => `<a href="${explorer(a)}" target="_blank" rel="noopener">${shortKey(a)}</a>`).join(" · ");
+  const links = f.accounts.map((a) => `<a href="${esc(explorer(a))}" target="_blank" rel="noopener">${esc(shortKey(a))}</a>`).join(" · ");
   const action = f.action ? `<label class="act"><input type="checkbox" data-i="${i}"${connected ? "" : " disabled"}> ${esc(actionLabel(f.action))}</label>${f.keep ? `<p class="small keep">Left unticked: ${esc(f.keep)}</p>` : ""}` : "";
   return `<div class="card sev-${f.severity}"><div class="sev">${SEV_LABEL[f.severity]}</div><h3>${esc(f.title)}</h3><p>${esc(f.detail)}</p><p class="links">${links}</p>${action}</div>`;
 }
@@ -496,7 +505,7 @@ async function doFix(): Promise<void> {
           sent++;
           for (const a of g) if (rentOf(a)) { closes++; closeLamports += rentOf(a); }
           feeLamports += groupFee(g, bps);
-          log.innerHTML += `<li>Sent <a href="https://solscan.io/tx/${res.signature}" target="_blank" rel="noopener">${res.signature.slice(0, 8)}…</a> (${g.length} action${g.length === 1 ? "" : "s"})</li>`;
+          log.innerHTML += `<li>Sent <a href="https://solscan.io/tx/${esc(res.signature)}" target="_blank" rel="noopener">${esc(res.signature.slice(0, 8))}…</a> (${g.length} action${g.length === 1 ? "" : "s"})</li>`;
         } else {
           failed++;
           log.innerHTML += `<li class="err">Not sent (${g.length} action${g.length === 1 ? "" : "s"}): ${esc(res.error)}</li>`;

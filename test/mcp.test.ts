@@ -31,7 +31,11 @@ function env(): GuardEnv {
           if (sql.startsWith("INSERT INTO mcp_usage")) rows.set(`${a[0]}:${a[1]}`, (rows.get(`${a[0]}:${a[1]}`) ?? 0) + 1);
           return {};
         },
-        first: async () => (sql.includes("SUM") ? { n: [...rows.values()].reduce((s, n) => s + n, 0) } : rows.has(`${a[0]}:${a[1]}`) ? { n: rows.get(`${a[0]}:${a[1]}`) } : null),
+        first: async () => {
+          // INSERT … ON CONFLICT DO UPDATE SET n = n + 1 RETURNING n
+          if (sql.startsWith("INSERT INTO mcp_usage")) { const k = `${a[0]}:${a[1]}`; rows.set(k, (rows.get(k) ?? 0) + 1); return { n: rows.get(k) }; }
+          return sql.includes("SUM") ? { n: [...rows.values()].reduce((s, n) => s + n, 0) } : rows.has(`${a[0]}:${a[1]}`) ? { n: rows.get(`${a[0]}:${a[1]}`) } : null;
+        },
       }),
     }),
   };

@@ -21,6 +21,11 @@ export type TokenAcct = {
   lamports?: number;
   /** When the account last had a transaction (ms), for empty accounts on small wallets; undefined when not looked up. */
   lastActivity?: number | null;
+  /**
+   * Token-2022 account state that makes the token program refuse to close it even at zero balance: transfer fees
+   * withheld in the account, or a confidential-transfer balance. Such accounts are not offered for closing.
+   */
+  closeBlocked?: boolean;
 };
 
 export type MintInfo = {
@@ -323,7 +328,7 @@ export function scan(input: ScanInput, opts: ScanOptions = {}): ScanResult {
           accounts: [t.address, t.mint, mint.permanentDelegate],
           // A token with a market price (PYUSD, tokenised stocks) is worth money: never offer to burn it. Sell or
           // swap it instead. An unknown one may be offered, but left unticked.
-          action: known ? undefined : { kind: "burnClose", tokenAccount: t.address, mint: t.mint, program: t.program, amount: t.amount },
+          action: known || t.frozen ? undefined : { kind: "burnClose", tokenAccount: t.address, mint: t.mint, program: t.program, amount: t.amount },
           keep: known ? undefined : "Burning destroys these tokens for good. Only do it if you're sure they're worthless to you; otherwise sell or swap them.",
         });
       }
@@ -361,8 +366,10 @@ export function scan(input: ScanInput, opts: ScanOptions = {}): ScanResult {
       });
     }
 
-    // 6. Empty accounts: closing them returns the rent deposit (about 0.002 SOL each).
-    if (t.amount === 0n && !t.frozen) {
+    // 6. Empty accounts: closing them returns the rent deposit (about 0.002 SOL each). Not offered when the token
+    // program would refuse the owner's close: another close authority (finding 4 explains it), or Token-2022 state
+    // still in the account. A refused close would fail its whole transaction batch.
+    if (t.amount === 0n && !t.frozen && !(t.closeAuthority && t.closeAuthority !== wallet) && !t.closeBlocked) {
       f.push({
         check: "empty", severity: "ok",
         title: t.isNative ? "Empty wrapped-SOL account" : `Empty ${name} account`,
@@ -388,7 +395,7 @@ export function scan(input: ScanInput, opts: ScanOptions = {}): ScanResult {
           title: `${a.name || shortKey(t.mint)} looks like a phishing airdrop`,
           detail: `You didn't buy this: ${why}. Never open the link; the site asks for a signature that empties the wallet. ${nft ? "It's an NFT, so burn it from your wallet app (SealGuard only burns fungible tokens for now)." : "You can burn it and close the account to get the rent back."}`,
           accounts: [t.address, t.mint],
-          action: nft ? undefined : { kind: "burnClose", tokenAccount: t.address, mint: t.mint, program: t.program, amount: t.amount },
+          action: nft || t.frozen ? undefined : { kind: "burnClose", tokenAccount: t.address, mint: t.mint, program: t.program, amount: t.amount },
         });
       }
     }

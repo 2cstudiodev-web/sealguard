@@ -21,6 +21,12 @@
   ],
   // Every 10 minutes: re-scan the guards whose turn it is (each active wallet about once an hour).
   "triggers": { "crons": ["*/10 * * * *"] },
+  // Rate limits per caller (Workers Rate Limiting; period is 10 or 60 s). RL_RPC: the /rpc relay to Helius;
+  // RL_API: /api/stat, sign-in, price quotes and Telegram replies.
+  "ratelimits": [
+    { "name": "RL_RPC", "namespace_id": "1101", "simple": { "limit": 300, "period": 60 } },
+    { "name": "RL_API", "namespace_id": "1102", "simple": { "limit": 40, "period": 60 } }
+  ],
   "vars": {
     "PUBLIC_URL": "https://guard.2cstudio.app",
     // 2C Studio's treasury wallet (the same one SealDraw and BananaTap collect into).

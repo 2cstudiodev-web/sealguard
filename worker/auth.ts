@@ -29,6 +29,11 @@ function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
   return d === 0;
 }
 
+/** Constant-time comparison of two strings (secrets in headers and query strings). */
+export function safeEqualText(a: string, b: string): boolean {
+  return timingSafeEqual(utf8.encode(a), utf8.encode(b));
+}
+
 /** hex(ms) + HMAC(secret, wallet|ms): checked without storage. */
 export function makeNonce(secret: string, wallet: string, now: number): string {
   const ts = now.toString(16).padStart(12, "0");
@@ -40,7 +45,7 @@ export function nonceIssuedAt(secret: string, wallet: string, nonce: string): nu
   if (!/^[0-9a-f]{36}$/.test(nonce)) return null;
   const ts = parseInt(nonce.slice(0, 12), 16);
   if (!Number.isFinite(ts)) return null;
-  return makeNonce(secret, wallet, ts) === nonce ? ts : null;
+  return timingSafeEqual(utf8.encode(makeNonce(secret, wallet, ts)), utf8.encode(nonce)) ? ts : null;
 }
 
 /** The SIWS message the wallet signs (the same text the server rebuilds to verify). */
@@ -65,6 +70,8 @@ export async function checkSignIn(secret: string, s: SignIn, now: number): Promi
   const issued = nonceIssuedAt(secret, s.wallet, s.nonce);
   if (issued === null) return { ok: false, reason: "bad_nonce" };
   if (now - issued > NONCE_TTL_MS || issued > now + 60_000) return { ok: false, reason: "nonce_expired" };
+  // The page signs the exact message /api/auth/nonce returned, whose "Issued At" is the nonce's own time.
+  if (s.issuedAt !== new Date(issued).toISOString()) return { ok: false, reason: "bad_nonce" };
   let pk: Uint8Array, sig: Uint8Array;
   try {
     pk = bs58.decode(s.wallet);

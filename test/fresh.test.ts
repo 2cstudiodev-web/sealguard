@@ -18,7 +18,7 @@ function env(): GuardEnv & { writes: string[] } {
     prepare: (sql: string) => ({
       bind: () => ({
         first: async () => ({ wallet: W, paid_until: now + 86_400_000 }),
-        run: async () => { writes.push(sql); return {}; },
+        run: async () => { writes.push(sql); return { meta: { changes: 1 } }; },
       }),
     }),
   };
@@ -51,7 +51,9 @@ describe("fresh signature for Telegram changes", () => {
     const ok = await handleApi(post("/api/guard/unlink", old, { proof: proof(now) }), e, "/api/guard/unlink", now);
     expect(ok!.status).toBe(200);
     expect(typeof ((await ok!.json()) as any).token).toBe("string");
-    expect(e.writes).toHaveLength(1);
+    // The signed proof's nonce is recorded (so it can't be used again), then the change itself.
+    expect(e.writes.filter((w) => w.includes("used_nonces"))).toHaveLength(1);
+    expect(e.writes.filter((w) => !w.includes("used_nonces"))).toHaveLength(1);
   });
 
   it("refuses a signature from another wallet", async () => {
