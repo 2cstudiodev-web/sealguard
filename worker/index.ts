@@ -3,7 +3,6 @@
 // cron re-scans). Nothing here signs anything.
 import { handleApi, runGuards, type GuardEnv } from "./guard";
 import { handleMcp } from "./mcp";
-import { pruneScanLog } from "./scanlog";
 
 export interface Env extends GuardEnv {
   ASSETS: Fetcher;
@@ -75,6 +74,5 @@ export default {
 
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil(runGuards(env, Date.now()).then((r) => console.log("guards", JSON.stringify(r))));
-    ctx.waitUntil(pruneScanLog(env.DB, Date.now()));
   },
 } satisfies ExportedHandler<Env>;

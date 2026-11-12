@@ -1,11 +1,10 @@
 // A record of each scan (privacy notice, "Scanning"): the wallet address, when, how it was scanned, the result in
-// numbers, where the visitor came from and the country Cloudflare reports. No IP address. Kept for SCAN_LOG_DAYS.
+// numbers, where the visitor came from and the country Cloudflare reports. No IP address. Kept with no set end date.
 // Read by 2C Control (monitor.2cstudio.app, behind Cloudflare Access) over a read-only D1 binding.
 import bs58 from "bs58";
 
 export type ScanVia = "connect" | "paste" | "link" | "mcp";
 export const SCAN_VIA: ScanVia[] = ["connect", "paste", "link", "mcp"];
-export const SCAN_LOG_DAYS = 365;
 
 export type ScanRow = {
   at: number; address: string; via: ScanVia; score: number | null;
@@ -35,9 +34,4 @@ export async function logScan(db: D1Database, r: ScanRow): Promise<void> {
   } catch (e) {
     console.error("scan log", e);
   }
-}
-
-/** Drops records older than SCAN_LOG_DAYS (runs with the guard cron). */
-export async function pruneScanLog(db: D1Database, now: number): Promise<void> {
-  try { await db.prepare("DELETE FROM scan_log WHERE at < ?").bind(now - SCAN_LOG_DAYS * 86_400_000).run(); } catch { /* table not there yet */ }
 }

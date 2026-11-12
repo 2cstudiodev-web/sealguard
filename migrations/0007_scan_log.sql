@@ -1,6 +1,6 @@
 -- A record of each scan (privacy notice, "Scanning", from 2026-11-12): the wallet address, when, how it was scanned
 -- (connect | paste | link | mcp), the result in numbers, where the visitor came from and the country Cloudflare
--- reports. No IP address. Rows older than 365 days are deleted by the cron (worker/scanlog.ts).
+-- reports. No IP address. (Planned 365-day deletion dropped the same day: the user keeps records with no set end date.)
 CREATE TABLE IF NOT EXISTS scan_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   at INTEGER NOT NULL,              -- ms
