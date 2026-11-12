@@ -490,17 +490,38 @@ async function doFix(): Promise<void> {
   try {
     for (let r = 0; r < rounds; r++) {
       const chunk = groups.slice(r * TXS_PER_APPROVAL, (r + 1) * TXS_PER_APPROVAL);
-      const label = rounds > 1 ? `Batch ${r + 1} of ${rounds}` : chunk.length > 1 ? `${chunk.length} transactions` : "Transaction";
-      setStatus(`${label}: preparing…`, "busy");
+      const firstLabel = rounds > 1 ? `Batch ${r + 1} of ${rounds}` : chunk.length > 1 ? `${chunk.length} transactions` : "Transaction";
+      setStatus(`${firstLabel}: preparing…`, "busy");
       const bh = await rpc<any>("getLatestBlockhash", [{ commitment: "confirmed" }]);
-      const txs = chunk.map((g) => buildTransaction(g, owner, bh.value.blockhash, bh.value.lastValidBlockHeight, { feeBps: bps }));
-      const sims = await Promise.all(txs.map((tx) => rpc<any>("simulateTransaction", [tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64"), { encoding: "base64", sigVerify: false, replaceRecentBlockhash: true }])));
-      const bad = sims.findIndex((sim) => sim?.value?.err);
-      if (bad >= 0) throw new Error(`The network rejected a transaction in simulation: ${JSON.stringify(sims[bad].value.err)}. Nothing in this batch was sent.`);
-      setStatus(`${label}: waiting for your approval in the wallet (${chunk.length} transaction${chunk.length === 1 ? "" : "s"})…`, "busy");
+      const build = (g: Action[]) => buildTransaction(g, owner, bh.value.blockhash, bh.value.lastValidBlockHeight, { feeBps: bps });
+      const passes = async (g: Action[]) => {
+        const sim = await rpc<any>("simulateTransaction", [build(g).serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64"), { encoding: "base64", sigVerify: false, replaceRecentBlockhash: true }]);
+        return !sim?.value?.err;
+      };
+      // One fix Solana would refuse right now (say an account changed since the scan) must not stop the others: the
+      // fixes of a transaction that fails simulation are tried one by one, and only the ones that pass are sent. Each
+      // transaction carries its own fee, so a fix left out costs nothing.
+      const oks = await Promise.all(chunk.map(passes));
+      let keep: Action[][] = chunk.filter((_, k) => oks[k]);
+      const retry = chunk.filter((_, k) => !oks[k]).flat();
+      let left = 0;
+      if (retry.length) {
+        const single = await Promise.all(retry.map((a) => passes([a])));
+        const pass = retry.filter((_, k) => single[k]);
+        left = retry.length - pass.length;
+        if (pass.length) keep = keep.concat(packActions(pass, owner, { feeBps: bps }));
+      }
+      if (left) {
+        failed += left;
+        log.innerHTML += `<li class="err">${left === 1 ? "1 fix was" : `${left} fixes were`} left out because Solana would refuse ${left === 1 ? "it" : "them"} right now.${keep.length ? " The rest are ready to sign." : ""}</li>`;
+      }
+      if (!keep.length) continue;
+      const txs = keep.map(build);
+      const label = rounds > 1 ? `Batch ${r + 1} of ${rounds}` : keep.length > 1 ? `${keep.length} transactions` : "Transaction";
+      setStatus(`${label}: waiting for your approval in the wallet (${keep.length} transaction${keep.length === 1 ? "" : "s"})…`, "busy");
       const results = await signAndSendMany(connected, txs, async (raw) => rpc<string>("sendTransaction", [Buffer.from(raw).toString("base64"), { encoding: "base64", preflightCommitment: "confirmed" }]));
       results.forEach((res, k) => {
-        const g = chunk[k];
+        const g = keep[k];
         if (res.ok) {
           sent++;
           for (const a of g) if (rentOf(a)) { closes++; closeLamports += rentOf(a); }
@@ -512,11 +533,11 @@ async function doFix(): Promise<void> {
         }
       });
       // A wallet can hand back fewer results than transactions it was given: those weren't sent, so say so.
-      for (let k = results.length; k < chunk.length; k++) {
+      for (let k = results.length; k < keep.length; k++) {
         failed++;
-        log.innerHTML += `<li class="err">Not sent (${chunk[k].length} action${chunk[k].length === 1 ? "" : "s"}): the wallet didn't return this transaction.</li>`;
+        log.innerHTML += `<li class="err">Not sent (${keep[k].length} action${keep[k].length === 1 ? "" : "s"}): the wallet didn't return this transaction.</li>`;
       }
-      if (results.length < chunk.length || results.every((x) => !x.ok)) {
+      if (results.length < keep.length || results.every((x) => !x.ok)) {
         const rest = groups.slice((r + 1) * TXS_PER_APPROVAL);
         if (rest.length) {
           failed += rest.length;

@@ -19,6 +19,8 @@ export type TokenAcct = {
   isNative: boolean;
   /** The account's balance in lamports: the rent deposit closing it returns (Token-2022 accounts with extensions hold more). */
   lamports?: number;
+  /** The account's data size in bytes, when known: sets the rent it must hold, which caps the close fee's base. */
+  space?: number;
   /** When the account last had a transaction (ms), for empty accounts on small wallets; undefined when not looked up. */
   lastActivity?: number | null;
   /**
@@ -102,7 +104,8 @@ export type CheckId =
 
 export type Action =
   | { kind: "revoke"; tokenAccount: string; mint: string; program: TokenProgram }
-  | { kind: "close"; tokenAccount: string; mint: string; program: TokenProgram; lamports: number }
+  /** `lamports` all come back to the owner; the fee is charged on `rent` only (capped at the rent-exempt minimum). */
+  | { kind: "close"; tokenAccount: string; mint: string; program: TokenProgram; lamports: number; rent?: number }
   | { kind: "burnClose"; tokenAccount: string; mint: string; program: TokenProgram; amount: bigint }
   | { kind: "withdrawNonce"; nonceAccount: string; lamports: number }
   /** Closes a pump.fun volume account: all `lamports` come back; the fee is charged on `rent` only, not on cashback. */
@@ -110,7 +113,7 @@ export type Action =
 
 /** The rent deposit an action returns (what the close fee is charged on); 0 for actions that return none. */
 export function rentOf(a: Action): number {
-  return a.kind === "close" ? a.lamports : a.kind === "closePump" ? a.rent : 0;
+  return a.kind === "close" ? a.rent ?? a.lamports : a.kind === "closePump" ? a.rent : 0;
 }
 
 export type Finding = {
@@ -198,6 +201,22 @@ export const CLOSE_FEE_PERCENT = CLOSE_FEE_BPS / 100;
 /** The fee on `lamports` of returned rent, rounded down. */
 export function closeFee(lamports: number, bps: number = CLOSE_FEE_BPS): number {
   return Math.floor((lamports * bps) / 10_000);
+}
+
+/** Rent-exempt minimum for an account of `space` bytes (Solana's rent: 3480 lamports per byte-year, two years, plus 128 bytes of header). */
+export function rentExempt(space: number): number {
+  return (128 + space) * 3480 * 2;
+}
+
+/**
+ * What the close fee is charged on: the account's balance, but never more than the rent an account of its size must
+ * hold (a classic token account is 165 bytes). Extra SOL that happens to sit in the account still comes back in
+ * full; it just isn't charged, and a wrong balance from the data provider can't raise the fee.
+ */
+export function feeBase(t: { lamports?: number; space?: number; program: TokenProgram }): number {
+  const bal = t.lamports ?? TOKEN_ACCOUNT_RENT_LAMPORTS;
+  const space = t.space ?? (t.program === "token" ? 165 : undefined);
+  return space === undefined ? bal : Math.min(bal, rentExempt(space));
 }
 
 const URL_RE = /(https?:\/\/|www\.|\b[a-z0-9-]+\.(com|io|xyz|app|net|org|fi|gg|co|site|link|me|lol|wtf|fun)\b|t\.me\/)/i;
@@ -375,7 +394,7 @@ export function scan(input: ScanInput, opts: ScanOptions = {}): ScanResult {
         title: t.isNative ? "Empty wrapped-SOL account" : `Empty ${name} account`,
         detail: `Nothing in it. Closing it returns its ${solWithUsd(t.lamports ?? TOKEN_ACCOUNT_RENT_LAMPORTS, solPrice)} rent deposit to you, ${feeBps ? `less SealGuard's ${feeBps / 100}% fee` : "with no fee because this wallet has the guard"}.`,
         accounts: [t.address, t.mint],
-        action: { kind: "close", tokenAccount: t.address, mint: t.mint, program: t.program, lamports: t.lamports ?? TOKEN_ACCOUNT_RENT_LAMPORTS },
+        action: { kind: "close", tokenAccount: t.address, mint: t.mint, program: t.program, lamports: t.lamports ?? TOKEN_ACCOUNT_RENT_LAMPORTS, rent: feeBase(t) },
         keep: COMMON_MINTS[t.mint]
           ? `You'll likely receive ${COMMON_MINTS[t.mint]} again; closing it means paying the deposit again next time.`
           : t.lastActivity && now - t.lastActivity < RECENT_ACTIVITY_MS
@@ -454,7 +473,8 @@ export function scan(input: ScanInput, opts: ScanOptions = {}): ScanResult {
   for (const x of f) counts[x.severity]++;
   const emptyCount = f.filter((x) => x.check === "empty").length;
   const emptyLamports = f.reduce((sum, x) => sum + (x.action?.kind === "close" ? x.action.lamports : 0), 0);
-  const emptyFee = closeFee(emptyLamports, feeBps);
+  // The fee on the same base the transactions use (rent, capped at the rent-exempt minimum); everything comes back.
+  const emptyFee = closeFee(f.reduce((sum, x) => sum + (x.action?.kind === "close" ? rentOf(x.action) : 0), 0), feeBps);
   const score = Math.max(0, 100 - scorePenalty(f));
   return {
     score, findings: f, counts,

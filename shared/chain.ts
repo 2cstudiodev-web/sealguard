@@ -47,6 +47,7 @@ function parseTokenAccounts(list: any[], program: "token" | "token2022"): TokenA
       frozen: info.state === "frozen",
       isNative: Boolean(info.isNative),
       lamports: typeof x.account?.lamports === "number" ? x.account.lamports : undefined,
+      space: typeof x.account?.space === "number" ? x.account.space : typeof x.account?.data?.space === "number" ? x.account.data.space : undefined,
       closeBlocked: closeBlockedBy(info.extensions),
     };
   });
