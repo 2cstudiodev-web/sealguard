@@ -28,7 +28,7 @@ function env(): GuardEnv {
     prepare: (sql: string) => ({
       bind: (...a: any[]) => ({
         run: async () => {
-          if (sql.startsWith("INSERT")) rows.set(`${a[0]}:${a[1]}`, (rows.get(`${a[0]}:${a[1]}`) ?? 0) + 1);
+          if (sql.startsWith("INSERT INTO mcp_usage")) rows.set(`${a[0]}:${a[1]}`, (rows.get(`${a[0]}:${a[1]}`) ?? 0) + 1);
           return {};
         },
         first: async () => (sql.includes("SUM") ? { n: [...rows.values()].reduce((s, n) => s + n, 0) } : rows.has(`${a[0]}:${a[1]}`) ? { n: rows.get(`${a[0]}:${a[1]}`) } : null),

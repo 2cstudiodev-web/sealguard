@@ -9,6 +9,7 @@ import { PublicKey } from "@solana/web3.js";
 import { fetchScanInput, rpcOver } from "../shared/chain";
 import { CLOSE_FEE_BPS, scan, type Finding, type ScanResult } from "../web/src/scan";
 import type { GuardEnv } from "./guard";
+import { logScan } from "./scanlog";
 
 const ORIGIN = "https://guard.2cstudio.app";
 const PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
@@ -152,16 +153,21 @@ async function ipKey(secret: string, ip: string): Promise<string> {
 export type Scanner = (wallet: string) => Promise<ScanResult>;
 const chainScanner = (env: GuardEnv): Scanner => async (wallet) => scan(await fetchScanInput(rpcOver(env.RPC_URL, 30_000), wallet, () => {}, { activityUpTo: 40 }), { closeFeeBps: CLOSE_FEE_BPS });
 
-async function callTool(env: GuardEnv, ip: string, name: string, args: any, now: number, scanner: Scanner): Promise<object> {
+async function callTool(env: GuardEnv, ip: string, name: string, args: any, now: number, scanner: Scanner, country: string | null = null): Promise<object> {
   const wallet = checkAddress(args?.address);
   await countCall(env, ip, now);
   const r = await scanner(wallet);
+  await logScan(env.DB, {
+    at: now, address: wallet, via: "mcp", score: name === "scan_wallet" ? r.score : null,
+    critical: r.counts.critical ?? 0, high: r.counts.high ?? 0, medium: r.counts.medium ?? 0, low: r.counts.low ?? 0,
+    reclaimAccounts: r.reclaim.accounts, reclaimLamports: r.reclaim.lamports, source: `mcp:${name}`, country,
+  });
   if (name === "scan_wallet") return scanSummary(wallet, r);
   if (name === "list_empty_token_accounts") return emptyAccounts(wallet, r);
   return approvals(wallet, r);
 }
 
-async function dispatch(env: GuardEnv, ip: string, method: string, params: any, now: number, scanner: Scanner): Promise<object> {
+async function dispatch(env: GuardEnv, ip: string, method: string, params: any, now: number, scanner: Scanner, country: string | null = null): Promise<object> {
   switch (method) {
     case "initialize": {
       const asked = String(params?.protocolVersion ?? "");
@@ -175,7 +181,7 @@ async function dispatch(env: GuardEnv, ip: string, method: string, params: any, 
       const name = String(params?.name ?? "");
       if (!TOOLS.some((t) => t.name === name)) throw new RpcError(-32602, `Unknown tool: ${name}`);
       try {
-        const result = await callTool(env, ip, name, params?.arguments ?? {}, now, scanner);
+        const result = await callTool(env, ip, name, params?.arguments ?? {}, now, scanner, country);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], structuredContent: result };
       } catch (err: any) {
         if (err instanceof ToolError) return { content: [{ type: "text", text: err.message }], isError: true };
@@ -193,12 +199,12 @@ async function dispatch(env: GuardEnv, ip: string, method: string, params: any, 
 
 const rpcError = (id: unknown, code: number, message: string) => ({ jsonrpc: "2.0", id, error: { code, message } });
 
-async function handleMessage(env: GuardEnv, ip: string, msg: any, now: number, scanner: Scanner): Promise<object | null> {
+async function handleMessage(env: GuardEnv, ip: string, msg: any, now: number, scanner: Scanner, country: string | null = null): Promise<object | null> {
   const isRequest = msg && typeof msg === "object" && msg.jsonrpc === "2.0" && typeof msg.method === "string";
   if (!isRequest) return msg && typeof msg === "object" && "id" in msg && !("result" in msg || "error" in msg) ? rpcError(msg.id ?? null, -32600, "Invalid request") : null;
   if (!("id" in msg)) return null; // notifications get no answer
   try {
-    return { jsonrpc: "2.0", id: msg.id, result: await dispatch(env, ip, msg.method, msg.params ?? {}, now, scanner) };
+    return { jsonrpc: "2.0", id: msg.id, result: await dispatch(env, ip, msg.method, msg.params ?? {}, now, scanner, country) };
   } catch (err) {
     if (err instanceof RpcError) return rpcError(msg.id, err.code, err.message);
     console.error("mcp", err);
@@ -213,14 +219,15 @@ export async function handleMcp(request: Request, env: GuardEnv, now: number, sc
   // No server-to-client stream and no sessions: every request is answered on its own.
   if (request.method !== "POST") return new Response(JSON.stringify({ error: "method_not_allowed", message: "POST JSON-RPC messages to this URL" }), { status: 405, headers: { "content-type": "application/json", allow: "POST, OPTIONS", ...CORS } });
   const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
+  const country = typeof (request as any).cf?.country === "string" ? String((request as any).cf.country).slice(0, 2).toUpperCase() : null;
   const body = await request.json().catch(() => undefined);
   if (body === undefined) return json(rpcError(null, -32700, "Parse error"), 400);
   if (Array.isArray(body)) {
     if (!body.length) return json(rpcError(null, -32600, "Empty batch"), 400);
     const out = [];
-    for (const m of body.slice(0, 10)) { const r = await handleMessage(env, ip, m, now, scanner); if (r) out.push(r); }
+    for (const m of body.slice(0, 10)) { const r = await handleMessage(env, ip, m, now, scanner, country); if (r) out.push(r); }
     return out.length ? json(out) : new Response(null, { status: 202, headers: CORS });
   }
-  const out = await handleMessage(env, ip, body, now, scanner);
+  const out = await handleMessage(env, ip, body, now, scanner, country);
   return out ? json(out) : new Response(null, { status: 202, headers: CORS });
 }

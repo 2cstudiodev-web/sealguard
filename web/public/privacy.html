@@ -28,19 +28,19 @@
 <header class="top"><a class="brand" href="/"><img src="/mark.svg" alt="" width="28" height="28"> SealGuard</a><span class="muted">by <a href="https://2cstudio.app">2C Studio</a></span></header>
 <main>
 <h1>Privacy</h1>
-<p class="muted">Last updated 11 November 2026. Questions: support@2cstudio.app.</p>
+<p class="muted">Last updated 12 November 2026. Questions: support@2cstudio.app.</p>
 
 <h2>Scanning</h2>
-<p>When you scan a wallet, its public address is sent to our server and on to our Solana data provider (Helius) to read the chain. We don't keep a record of which addresses were scanned. The same goes for checks made by AI apps through SealGuard's MCP server; for its rate limit we count calls per connection under a one-way hash of the IP address, kept for up to two days.</p>
+<p>When you scan a wallet, its public address is sent to our server and on to our Solana data provider (Helius) to read the chain. We keep a record of each scan: the wallet address, when it was scanned, whether it was connected, pasted, opened from a link or checked by an AI app through SealGuard's MCP server, the result (the score, how many problems of each kind were found and how much SOL closing empty accounts would return), the site or link you came from, and the country Cloudflare reports for the request. We don't store your IP address with it. We use these records to see how SealGuard is used and to improve it, and delete them after 12 months. For the MCP server's rate limit we also count calls per connection under a one-way hash of the IP address, kept for up to two days.</p>
 
 <h2>Signing in and the guard</h2>
 <p>If you sign in to set up the guard, we store your wallet address, your Telegram chat id once you link it, a summary of the wallet's last check (approvals, nonce and stake authorities, flagged tokens), and your payments (transaction signature, token, amount, date). We use them only to run the guard and keep payment records. Your browser keeps a sign-in token in local storage; there are no tracking cookies.</p>
 
 <h2>Logs and counts</h2>
-<p>Cloudflare, which hosts SealGuard, keeps standard request logs for a short time. We count visits without cookies: each open tab gets a random number that is gone when you close it, so we can see how many visits there were, from which country and to which page; nothing follows you from one day to the next. We also keep daily totals of scans and fixes (how many accounts were closed and the fee taken), with no wallet addresses. We don't sell or share data with anyone else.</p>
+<p>Cloudflare, which hosts SealGuard, keeps standard request logs for a short time. We count visits without cookies: each open tab gets a random number that is gone when you close it, so we can see how many visits there were, from which country and to which page; nothing follows you from one day to the next. We also keep daily totals of scans and fixes (how many accounts were closed and the fee taken). We don't sell or share data with anyone else.</p>
 
 <h2>Deleting your data</h2>
-<p>Write to support@2cstudio.app from any address with your wallet address, and sign a message we send you to prove it's your wallet; we'll delete the guard record. Payment records are kept as long as the law requires.</p>
+<p>Write to support@2cstudio.app from any address with your wallet address, and sign a message we send you to prove it's your wallet; we'll delete the guard record and the scan records of that address. Payment records are kept as long as the law requires.</p>
 </main>
 <footer><a href="/">SealGuard</a> · <a href="/terms">Terms</a> · <a href="https://github.com/2cstudiodev-web/sealguard">Source code (MIT)</a> · <a href="https://2cstudio.app">2C Studio</a></footer>
 </body>

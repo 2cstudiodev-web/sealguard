@@ -27,6 +27,16 @@ const feeBps = () => (isGuardMember() ? 0 : CLOSE_FEE_BPS);
  * every empty-account close. Applied once this wallet is connected and scanned.
  */
 const params = new URLSearchParams(location.search);
+/** Where this visit came from, for the scan record: utm_source, else the referring site, else "direct" (or "app"). */
+const VISIT_SOURCE = (() => {
+  const utm = params.get("utm_source");
+  if (utm) return "utm:" + utm.slice(0, 60);
+  if (params.get("app")) return "app:" + params.get("app")!.slice(0, 20);
+  try { const h = document.referrer ? new URL(document.referrer).hostname : ""; if (h && h !== location.hostname) return h.replace(/^www\./, ""); } catch { /* none */ }
+  return "direct";
+})();
+/** How the address being looked at arrived: typed or pasted, or from a ?address= link. */
+let scanVia: "paste" | "link" = "paste";
 let pendingFix: { claim: boolean; fix: string | null } | null = params.get("claim") === "1" || params.get("fix") ? { claim: params.get("claim") === "1", fix: params.get("fix") } : null;
 
 function setStatus(text: string, kind: "" | "busy" | "err" = ""): void {
@@ -136,6 +146,7 @@ function stopSecret(raw: string): boolean {
 /** Scans what's in the given address box (the header search or the hero box), read-only. */
 function doScanAddress(ev: Event, input: HTMLInputElement = $<HTMLInputElement>("#addrinput")): void {
   ev.preventDefault();
+  if (ev.isTrusted) scanVia = "paste"; // typed or pasted by a person (a ?address= link scans with a synthetic event)
   const raw = input.value.trim();
   if (stopSecret(raw)) return;
   try {
@@ -177,7 +188,11 @@ async function doScan(): Promise<void> {
     const input = await fetchScanInput(address, (s) => setStatus(`${s}…`, "busy"));
     lastInput = input;
     result = scan(input, { closeFeeBps: feeBps() });
-    void reportStat("scan");
+    void reportStat("scan", {
+      address, via: connected ? "connect" : scanVia, score: result.score,
+      critical: result.counts.critical ?? 0, high: result.counts.high ?? 0, medium: result.counts.medium ?? 0, low: result.counts.low ?? 0,
+      reclaimAccounts: result.reclaim.accounts, reclaimLamports: result.reclaim.lamports, source: VISIT_SOURCE,
+    });
     selected = new Set();
     setStatus("");
     renderReport();
@@ -513,8 +528,11 @@ async function doFix(): Promise<void> {
   }
 }
 
-/** Anonymous counters for 2C Studio (no address): how many scans, how many accounts closed, how much fee. */
-async function reportStat(kind: "scan" | "fix", data: Record<string, number> = {}): Promise<void> {
+/**
+ * Counters for 2C Studio: how many scans, how many accounts closed, how much fee. A scan also sends the address, how
+ * it was scanned and the result, kept as a scan record (privacy notice, "Scanning").
+ */
+async function reportStat(kind: "scan" | "fix", data: Record<string, unknown> = {}): Promise<void> {
   try { await fetch("/api/stat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind, ...data }), keepalive: true }); } catch { /* best effort */ }
 }
 
@@ -530,6 +548,7 @@ if (pendingFix) setStatus("Connect the wallet this message was about to see the 
 const linkedAddress = params.get("address");
 if (linkedAddress && !pendingFix) {
   $<HTMLInputElement>("#addrinput").value = linkedAddress;
+  scanVia = "link";
   doScanAddress(new Event("submit"));
 }
 onWalletsChange(() => { renderWallets(); void autoReconnect(); });

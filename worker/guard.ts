@@ -6,6 +6,7 @@ import { solWithUsd } from "../web/src/scan";
 import { bearer, checkSignIn, FRESH_SIGNIN_MS, issueToken, makeNonce, siwsMessage, verifySession, verifyToken, webhookSecret } from "./auth";
 import { buildQuotes, extendPaidUntil, GUARD_USD, jupiterPrices, TEST_QUOTES, PAY_SLACK_MS, PAY_TOKENS, QUOTE_TTL_MS, SKR_MINT, verifyPaymentTx, WSOL_MINT, type ParsedTx, type PayToken } from "./pay";
 import { esc, sendTelegram, setWebhook, startCode } from "./telegram";
+import { cleanSource, logScan, SCAN_VIA, validWallet, type ScanVia } from "./scanlog";
 
 export interface GuardEnv {
   DB: D1Database;
@@ -88,7 +89,8 @@ export async function handleApi(request: Request, env: GuardEnv, path: string, n
     if (!env.SESSION_SECRET) throw new ApiError(503, "not_configured", "The guard isn't set up on this deployment yet");
     const method = request.method;
 
-    // Anonymous counters from the page (no address, no session): how many scans and fixes, what was closed.
+    // Daily counters from the page (no session): how many scans and fixes, what was closed. A scan also leaves a
+    // record with its address and result (worker/scanlog.ts; privacy notice, "Scanning").
     if (path === "/api/stat" && method === "POST") {
       const b = await readJson(request);
       const kind = b.kind === "scan" || b.kind === "fix" ? b.kind : null;
@@ -97,6 +99,16 @@ export async function handleApi(request: Request, env: GuardEnv, path: string, n
       const day = new Date(now).toISOString().slice(0, 10);
       await env.DB.prepare("INSERT INTO daily_stats (day, kind, n, closes, lamports, fee) VALUES (?, ?, 1, ?, ?, ?) ON CONFLICT(day, kind) DO UPDATE SET n = n + 1, closes = closes + excluded.closes, lamports = lamports + excluded.lamports, fee = fee + excluded.fee")
         .bind(day, kind, num(b.closes, 100_000), num(b.lamports, 1e13), num(b.fee, 1e12)).run();
+      const scanned = kind === "scan" ? validWallet(b.address) : null;
+      if (scanned) {
+        await logScan(env.DB, {
+          at: now, address: scanned, via: SCAN_VIA.includes(b.via) && b.via !== "mcp" ? (b.via as ScanVia) : "paste",
+          score: Number.isInteger(b.score) && b.score >= 0 && b.score <= 100 ? b.score : null,
+          critical: num(b.critical, 10_000), high: num(b.high, 10_000), medium: num(b.medium, 10_000), low: num(b.low, 10_000),
+          reclaimAccounts: num(b.reclaimAccounts, 100_000), reclaimLamports: num(b.reclaimLamports, 1e13),
+          source: cleanSource(b.source), country: cleanSource((request as any).cf?.country)?.toUpperCase() ?? null,
+        });
+      }
       return json({ ok: true });
     }
 
