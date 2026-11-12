@@ -34,12 +34,12 @@ describe("pump.fun deposits", () => {
     expect(parsePumpAccount("pump", "pda", W, null)).toBeNull();
   });
 
-  it("offers to close when nothing is left to claim, unticked with a reason, and mentions the SOL cashback", () => {
+  it("offers to close when nothing is left to claim, unticked with a reason, and says the next trade takes it again", () => {
     const r = scan({ ...base, pump: [pump({})] });
     const f = r.findings.find((x) => x.check === "pumpDeposit")!;
     expect(f.action).toMatchObject({ kind: "closePump", program: "pump", lamports: 2_181_985, rent: 1_844_400 });
     expect(f.keep).toMatch(/next trade/);
-    expect(f.detail).toMatch(/SOL cashback/);
+    expect(f.detail).toMatch(/takes the deposit again/);
     expect(r.score).toBe(100);
   });
 

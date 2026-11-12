@@ -4,7 +4,7 @@ import { PublicKey } from "@solana/web3.js";
 import { looksSecret } from "./secret";
 import { shareScore } from "./share";
 import { fetchScanInput, rpc } from "./rpc";
-import { CLOSE_FEE_BPS, closeFee, DUST_USD, rentOf, scan, shortKey, solWithUsd, type Action, type Finding, type ScanInput, type ScanResult, type Severity } from "./scan";
+import { CLOSE_FEE_BPS, closeFee, rentOf, scan, shortKey, solWithUsd, type Action, type Finding, type ScanInput, type ScanResult, type Severity } from "./scan";
 import { buildTransaction, describeAction, describeFee, groupFee, packActions, TXS_PER_APPROVAL } from "./tx";
 import { buildDustTx, JUPITER_GAP_MS } from "./dust";
 import { connect, connectSilently, disconnect, listWallets, onWalletsChange, registerMobile, signAndSendMany, type Connected } from "./wallet";
@@ -213,10 +213,14 @@ async function doScan(): Promise<void> {
 
 const SEV_LABEL: Record<Severity, string> = { critical: "Critical", high: "High", medium: "Medium", low: "Low", ok: "Tidy-up" };
 
+/** The wallet the result box on top of the report belongs to; it goes away when another wallet is shown. */
+let fixResultFor: string | null = null;
+
 function renderReport(): void {
   if (!result) return;
   const r = result;
   $("#report").hidden = false;
+  if (fixResultFor !== address) $("#fixresult").hidden = true;
   const score = $("#score");
   score.textContent = String(r.score);
   score.className = `score ${r.score >= 90 ? "good" : r.score >= 60 ? "meh" : "bad"}`;
@@ -365,9 +369,10 @@ function groupFindings(fs: Finding[]): number[][] {
   return out;
 }
 
-const GROUP_TITLE: Record<string, (n: number) => string> = {
+/** Group titles; `back` is what the group's fixes return after the fee ("0.0117 SOL (≈ US$0.97)"). */
+const GROUP_TITLE: Record<string, (n: number, back: string) => string> = {
   frozen: (n) => `${n} of your token accounts are frozen by their issuers`,
-  empty: (n) => `${n} empty token accounts: ${solWithUsd(result ? result.reclaim.net : 0, result?.solPriceUsd)} back to you`,
+  empty: (n, back) => `${n} empty token accounts: ${back} back`,
   permanentDelegate: (n) => `${n} tokens whose issuer can take them back`,
   closeAuthority: (n) => `${n} token accounts someone else may close once empty`,
   delegate: (n) => `${n} approvals on your token accounts`,
@@ -375,17 +380,25 @@ const GROUP_TITLE: Record<string, (n: number) => string> = {
   phishing: (n) => `${n} tokens that look like phishing airdrops`,
   nonce: (n) => `${n} durable nonce accounts tied to your wallet`,
   stake: (n) => `${n} stake accounts with someone else's authority`,
-  dust: (n) => `${n} small balances you could sell for SOL`,
-  nftRent: (n) => `${n} NFTs you could burn for their rent`,
+  dust: (n, back) => `${n} small balances: about ${back} back`,
+  nftRent: (n, back) => `${n} NFTs you could burn: about ${back} back`,
 };
 
 /** A group's paragraph: the first finding's, except for sales, where one token's amount would read as the total. */
 function groupDetail(fs: Finding[], idx: number[]): string {
   const first = fs[idx[0]];
-  if (first.check !== "dust") return first.detail;
-  const total = idx.reduce((sum, i) => sum + (fs[i].action ? rentOf(fs[i].action!) : 0), 0);
   const bps = feeBps();
-  return `Each is worth under US$${DUST_USD}. Selling them for SOL through Jupiter and closing their accounts returns about ${solWithUsd(total, result?.solPriceUsd ?? null)} in total to you${bps ? `, less SealGuard's ${bps / 100}% fee` : ""}. The final amount depends on the price when you sign.`;
+  const fee = bps ? ` SealGuard keeps ${bps / 100}%.` : " No fee: this wallet has the guard.";
+  if (first.check === "dust") return `Sold for SOL through Jupiter, then the accounts are closed. The final amount depends on the price when you sign.${fee}`;
+  if (first.check === "empty") return `Closing them returns their rent deposits.${fee}`;
+  if (first.check === "nftRent") return `Burning destroys an NFT for good. Only burn ones you're sure are worthless.${fee}`;
+  return first.detail;
+}
+
+/** What a group's fixes return after the fee, for its title. */
+function groupBack(fs: Finding[], idx: number[]): string {
+  const total = idx.reduce((sum, i) => sum + (fs[i].action ? rentOf(fs[i].action!) : 0), 0);
+  return solWithUsd(total - closeFee(total, feeBps()), result?.solPriceUsd ?? null);
 }
 
 function groupCard(fs: Finding[], idx: number[]): string {
@@ -406,10 +419,10 @@ function groupCard(fs: Finding[], idx: number[]): string {
     ? `${esc(actionLabel(fs[withAction[0]].action!))} (${recommended.length === withAction.length ? `all ${recommended.length}` : `${recommended.length} of ${withAction.length}`})`
     : "";
   const action = recommended.length
-    ? `<label class="act"><input type="checkbox" class="groupbox" data-i="${recommended.join(",")}"${off}> ${label}</label>${kept ? `<p class="small muted">${kept} left unticked on purpose; open the list to see why or to tick them yourself.</p>` : ""}`
-    : withAction.length ? `<p class="small muted">All ${withAction.length} are left unticked on purpose; open the list to see why or to tick them yourself.</p>` : "";
+    ? `<label class="act"><input type="checkbox" class="groupbox" data-i="${recommended.join(",")}"${off}> ${label}</label>${kept ? `<p class="small muted">${kept} not ticked. Open the list to see why.</p>` : ""}`
+    : withAction.length ? `<p class="small muted">None ticked: your call. Open the list to choose.</p>` : "";
   const show = `Show all ${n}`;
-  return `<div class="card sev-${first.severity}"><div class="sev">${SEV_LABEL[first.severity]}</div><h3>${esc((GROUP_TITLE[first.check] ?? ((k: number) => `${k} findings`))(n))}</h3><p>${esc(groupDetail(fs, idx))}</p><button class="more linkbtn" data-show="${show}">${show}</button><ul class="grouplist small" hidden>${items}</ul>${action}</div>`;
+  return `<div class="card sev-${first.severity}"><div class="sev">${SEV_LABEL[first.severity]}</div><h3>${esc((GROUP_TITLE[first.check] ?? ((k: number) => `${k} findings`))(n, groupBack(fs, idx)))}</h3><p>${esc(groupDetail(fs, idx))}</p><button class="more linkbtn" data-show="${show}">${show}</button><ul class="grouplist small" hidden>${items}</ul>${action}</div>`;
 }
 
 function card(f: Finding, i: number): string {
@@ -513,6 +526,9 @@ async function doFix(): Promise<void> {
   const rounds = Math.ceil(groups.length / TXS_PER_APPROVAL);
   const log = $("#fixlog");
   log.innerHTML = "";
+  $("#fixresult").hidden = true;
+  const balance = async () => { try { return Number((await rpc<any>("getBalance", [connected!.address, { commitment: "confirmed" }])).value); } catch { return null; } };
+  const before = await balance();
   $("#fixbtn").toggleAttribute("disabled", true);
   let sent = 0, failed = 0, closes = 0, closeLamports = 0, feeLamports = 0, stopped = false;
   try {
@@ -613,7 +629,16 @@ async function doFix(): Promise<void> {
     void reportStat("fix", { closes, lamports: closeLamports, fee: feeLamports, address });
     setStatus(failed ? `${sent} sent, ${failed} not sent. Rescanning…` : "Done. Rescanning…", failed ? "err" : "busy");
     await new Promise((r) => setTimeout(r, 2500));
+    const logged = log.innerHTML;
     await doScan();
+    // The rescan clears the selection, which hides the fix bar and its log: what happened stays on top of the report,
+    // with what the wallet actually got back (its SOL balance before and after).
+    const after = await balance();
+    const back = before !== null && after !== null ? after - before : 0;
+    $("#fixsummary").textContent = `${failed ? `${sent} sent, ${failed} not sent.` : `Done: ${sent} transaction${sent === 1 ? "" : "s"} sent.`}${back > 0 ? ` Your wallet got back ${solWithUsd(back, result?.solPriceUsd ?? null)}.` : ""}`;
+    $("#fixdonelog").innerHTML = logged;
+    fixResultFor = address;
+    $("#fixresult").hidden = !sent && !failed;
   } catch (e: any) {
     setStatus(e?.message || "Something went wrong; nothing more was sent.", "err");
   } finally {

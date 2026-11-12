@@ -16,7 +16,7 @@ describe("members", () => {
     const [a, b] = [Keypair.generate().publicKey.toBase58(), Keypair.generate().publicKey.toBase58()];
     const r = scan(input({ tokenAccounts: [acct({ address: a, mint: OTHER }), acct({ address: b, mint: OTHER })] }), { closeFeeBps: 0 });
     expect(r.reclaim).toMatchObject({ lamports: 4_078_560, fee: 0, net: 4_078_560 });
-    expect(r.findings[0].detail).toContain("with no fee because this wallet has the guard");
+    expect(r.findings[0].detail).toContain("No fee: this wallet has the guard.");
     const closes = r.findings.map((f) => f.action!);
     expect(groupFee(closes, 0)).toBe(0);
     const tx = buildTransaction(closes, Keypair.generate().publicKey, "GHtXQBsoZHVnNFa9YevAzFr17DJjgHXk3ycTKD5xD3Zi", 1, { feeBps: 0 });

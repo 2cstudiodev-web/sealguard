@@ -32,7 +32,7 @@ describe("USD next to amounts", () => {
     const r = scan(input({ tokenAccounts: [acct({})] }));
     expect(r.reclaim.usd).toBeNull();
     expect(r.findings[0].detail).toContain("0.00203928 SOL rent deposit");
-    expect(r.findings[0].detail).toContain("5% fee");
+    expect(r.findings[0].detail).toContain("SealGuard keeps 5%.");
     expect(r.findings[0].detail).not.toContain("US$");
   });
 });

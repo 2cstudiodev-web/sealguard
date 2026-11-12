@@ -330,6 +330,8 @@ export function scan(input: ScanInput, opts: ScanOptions = {}): ScanResult {
   const f: Finding[] = [];
   const { wallet, tokenAccounts, mints, assets } = input;
   const solPrice = input.solPriceUsd ?? null;
+  /** The fee sentence closing every finding that returns SOL. */
+  const feeLine = feeBps ? ` SealGuard keeps ${feeBps / 100}%.` : " No fee: this wallet has the guard.";
   /** "12.5 USDC (≈ US$12.50)" for a token amount, when the feed prices it. */
   const tokenWithUsd = (amount: bigint, t: TokenAcct): string => {
     const a = assets[t.mint];
@@ -438,7 +440,7 @@ export function scan(input: ScanInput, opts: ScanOptions = {}): ScanResult {
       f.push({
         check: "empty", severity: "ok",
         title: t.isNative ? "Empty wrapped-SOL account" : `Empty ${name} account`,
-        detail: `Nothing in it. Closing it returns its ${solWithUsd(t.lamports ?? TOKEN_ACCOUNT_RENT_LAMPORTS, solPrice)} rent deposit to you, ${feeBps ? `less SealGuard's ${feeBps / 100}% fee` : "with no fee because this wallet has the guard"}.`,
+        detail: `Closing it returns its ${solWithUsd(t.lamports ?? TOKEN_ACCOUNT_RENT_LAMPORTS, solPrice)} rent deposit.${feeLine}`,
         accounts: [t.address, t.mint],
         action: { kind: "close", tokenAccount: t.address, mint: t.mint, program: t.program, lamports: t.lamports ?? TOKEN_ACCOUNT_RENT_LAMPORTS, rent: feeBase(t) },
         keep: COMMON_MINTS[t.mint]
@@ -462,7 +464,7 @@ export function scan(input: ScanInput, opts: ScanOptions = {}): ScanResult {
       f.push({
         check: "dust", severity: "ok",
         title: `Small balance you could sell: ${tokenWithUsd(t.amount, t)}`,
-        detail: `Worth under US$${DUST_USD}. Selling it for SOL through Jupiter and closing its account returns about ${solWithUsd(rent + estLamports, solPrice)} to you${feeBps ? `, less SealGuard's ${feeBps / 100}% fee` : ""}. The final amount depends on the price when you sign.`,
+        detail: `Sold for SOL through Jupiter, then the account is closed: about ${solWithUsd(rent + estLamports, solPrice)} back. The final amount depends on the price when you sign.${feeLine}`,
         accounts: [t.address, t.mint],
         action: { kind: "sellDust", tokenAccount: t.address, mint: t.mint, program: t.program, amount: t.amount, decimals: t.decimals, symbol: assets[t.mint]?.symbol || shortKey(t.mint), rent, estLamports },
         keep: DUST_KEEP,
@@ -496,7 +498,7 @@ export function scan(input: ScanInput, opts: ScanOptions = {}): ScanResult {
     f.push({
       check: "nftRent", severity: "ok",
       title: `NFT you could burn: ${name}`,
-      detail: `Burning this NFT destroys it and returns about ${solWithUsd(n.lamports, solPrice)} of rent to you${feeBps ? `, less SealGuard's ${feeBps / 100}% fee` : ""}. Only burn NFTs you're sure are worthless to you; it can't be undone.`,
+      detail: `Burning destroys the NFT for good and returns about ${solWithUsd(n.lamports, solPrice)}. Only burn it if you're sure it's worthless.${feeLine}`,
       accounts: [n.tokenAccount, n.mint],
       action: burnNftAction(n),
       keep: NFT_KEEP,
@@ -540,10 +542,10 @@ export function scan(input: ScanInput, opts: ScanOptions = {}): ScanResult {
     const pending = p.unclaimedTokens > 0n || p.needsClaim || p.heldTokens > 0;
     f.push({
       check: "pumpDeposit", severity: "ok",
-      title: pending ? `${name} deposit to take back once you claim your rewards: ${solWithUsd(p.lamports, solPrice)}` : `${name} deposit you can take back: ${solWithUsd(p.lamports, solPrice)}`,
+      title: pending ? `${name} deposit to take back once you claim your rewards: ${solWithUsd(p.lamports, solPrice)}` : `${name} deposit: ${solWithUsd(p.lamports, solPrice)} back`,
       detail: pending
         ? `${name} opened this account for your wallet on your first trade there and holds ${solWithUsd(p.lamports, solPrice)} in it. It also holds ${name} rewards or cashback you haven't claimed yet. Claim them on pump.fun first; after that SealGuard can close the account and return the deposit.`
-        : `${name} opened this account for your wallet on your first trade there and holds ${solWithUsd(p.lamports, solPrice)} in it${cashback ? `, including ${solWithUsd(cashback, solPrice)} of SOL cashback you haven't claimed` : ""}. Closing it returns all of it to you${feeBps ? `, less SealGuard's ${feeBps / 100}% fee on the deposit` : ""}. Your next trade on ${name} opens it again and takes the deposit again.`,
+        : `Closing it returns all of it. Your next ${name} trade takes the deposit again.${feeLine}`,
       accounts: [p.address],
       action: pending ? undefined : { kind: "closePump", program: p.program, account: p.address, lamports: p.lamports, rent: Math.min(p.rent, p.lamports) },
       keep: pending ? undefined : `If you still trade on ${name}, your next trade opens it again and takes the deposit again.`,
