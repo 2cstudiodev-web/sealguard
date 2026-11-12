@@ -122,12 +122,19 @@ export type CheckId =
   | "stake"
   | "nonce"
   | "pumpDeposit"
-  | "nftRent";
+  | "nftRent"
+  | "dust";
 
 export type Action =
   | { kind: "revoke"; tokenAccount: string; mint: string; program: TokenProgram }
   /** `lamports` all come back to the owner; the fee is charged on `rent` only (capped at the rent-exempt minimum). */
   | { kind: "close"; tokenAccount: string; mint: string; program: TokenProgram; lamports: number; rent?: number }
+  /**
+   * Sells a small balance for SOL through Jupiter, then closes the emptied account. Built at fix time from a fresh
+   * Jupiter quote (web/src/dust.ts). `rent` is the account's rent (the fee base, like a close); `estLamports` is the
+   * SOL the sale should bring at the scan's prices, for the estimates on screen only.
+   */
+  | { kind: "sellDust"; tokenAccount: string; mint: string; program: TokenProgram; amount: bigint; decimals: number; symbol: string; rent: number; estLamports: number }
   | { kind: "burnClose"; tokenAccount: string; mint: string; program: TokenProgram; amount: bigint }
   | { kind: "withdrawNonce"; nonceAccount: string; lamports: number }
   /** Closes a pump.fun volume account: all `lamports` come back; the fee is charged on `rent` only, not on cashback. */
@@ -137,7 +144,8 @@ export type Action =
 
 /** The rent deposit an action returns (what the close fee is charged on); 0 for actions that return none. */
 export function rentOf(a: Action): number {
-  return a.kind === "close" ? a.rent ?? a.lamports : a.kind === "closePump" ? a.rent : a.kind === "burnNft" ? a.lamports : 0;
+  return a.kind === "close" ? a.rent ?? a.lamports : a.kind === "closePump" ? a.rent : a.kind === "burnNft" ? a.lamports
+    : a.kind === "sellDust" ? a.rent + a.estLamports : 0;
 }
 
 export type Finding = {
@@ -251,6 +259,11 @@ const BAIT_RE = /\b(claim|reward|rewards|airdrop|air-drop|bonus|voucher|prize|re
  * "$MUMU Reward | mumusol.org"). Descriptions are left alone: ordinary meme tokens put their website there, and
  * flagging those buried a real wallet under hundreds of false alarms (first live scan, 11 Nov 2026).
  */
+/** Balances worth less than this (US$) are offered for selling. */
+export const DUST_USD = 1;
+/** Shown on every sale: never ticked by default. */
+export const DUST_KEEP = "Selling is your call. Tick it only if you don't want to keep this token.";
+
 /** Shown on every NFT burn: it is never ticked by default. */
 export const NFT_KEEP = "Burning destroys the NFT for good. Tick it only if you're sure it's worthless to you.";
 
@@ -433,6 +446,26 @@ export function scan(input: ScanInput, opts: ScanOptions = {}): ScanResult {
           : t.lastActivity && now - t.lastActivity < RECENT_ACTIVITY_MS
             ? "Used in the last 30 days; you may still be trading this token."
             : undefined,
+      });
+    }
+
+    // 6b. Small balances (worth under DUST_USD at the feed's price): selling them for SOL through Jupiter empties the
+    // account, which is then closed, so the rent comes back too. Never ticked by default: selling is the owner's call.
+    // Left out when the sale or the close would be refused (frozen, transfer hook, non-transferable, someone else's
+    // close authority, Token-2022 state), for NFTs, wrapped SOL, and when there's no SOL price to estimate with.
+    const price = assets[t.mint]?.priceUsd;
+    const usdValue = price ? (Number(t.amount) / 10 ** t.decimals) * price : 0;
+    const blockedMint = (mint?.extensions ?? []).some((e) => e === "transferHook" || e === "nonTransferable");
+    if (t.amount > 0n && usdValue > 0 && usdValue < DUST_USD && solPrice && !t.frozen && !t.isNative && !blockedMint
+      && !(t.decimals === 0 && t.amount === 1n) && !(t.closeAuthority && t.closeAuthority !== wallet) && !t.closeBlocked) {
+      const rent = feeBase(t), estLamports = Math.floor((usdValue / solPrice) * 1e9);
+      f.push({
+        check: "dust", severity: "ok",
+        title: `Small balance you could sell: ${tokenWithUsd(t.amount, t)}`,
+        detail: `Worth under US$${DUST_USD}. Selling it for SOL through Jupiter and closing its account returns about ${solWithUsd(rent + estLamports, solPrice)} to you${feeBps ? `, less SealGuard's ${feeBps / 100}% fee` : ""}. The final amount depends on the price when you sign.`,
+        accounts: [t.address, t.mint],
+        action: { kind: "sellDust", tokenAccount: t.address, mint: t.mint, program: t.program, amount: t.amount, decimals: t.decimals, symbol: assets[t.mint]?.symbol || shortKey(t.mint), rent, estLamports },
+        keep: DUST_KEEP,
       });
     }
 

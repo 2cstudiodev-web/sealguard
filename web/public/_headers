@@ -4,7 +4,7 @@
 # site, Jupiter's price API, the visit counter, the beacon, and the Mobile Wallet Adapter (ws://localhost on the
 # phone, or its wss relay). Inline styles stay allowed: the report uses style attributes.
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self' https://pulse.2cstudio.app https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://lite-api.jup.ag https://pulse.2cstudio.app https://cloudflareinsights.com ws://localhost:* ws://127.0.0.1:* wss:; frame-src 'none'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://pulse.2cstudio.app https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://lite-api.jup.ag https://api.jup.ag https://pulse.2cstudio.app https://cloudflareinsights.com ws://localhost:* ws://127.0.0.1:* wss:; frame-src 'none'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'
   X-Frame-Options: DENY
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin

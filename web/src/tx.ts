@@ -97,6 +97,9 @@ export function instructionsFor(a: Action, owner: PublicKey): TransactionInstruc
         ],
       })];
     }
+    case "sellDust":
+      // Needs a live Jupiter quote: built on its own at fix time (web/src/dust.ts), never packed with other fixes.
+      throw new Error("sellDust is built by dust.ts");
     case "withdrawNonce":
       return [SystemProgram.nonceWithdraw({ noncePubkey: new PublicKey(a.nonceAccount), authorizedPubkey: owner, toPubkey: owner, lamports: a.lamports })];
     case "closePump": {
@@ -148,5 +151,6 @@ export function describeAction(a: Action): string {
     case "withdrawNonce": return `Withdraw nonce account ${a.nonceAccount} (${a.lamports} lamports) to you`;
     case "closePump": return `Close your ${PUMP_PROGRAMS[a.program].name} volume account ${a.account} and return its ${a.lamports} lamports to you`;
     case "burnNft": return `Burn NFT ${a.mint} and return its rent (${a.lamports} lamports) to you`;
+    case "sellDust": return `Sell ${a.amount.toString()} base units of ${a.mint} for SOL through Jupiter, then close the account and return its rent to you`;
   }
 }

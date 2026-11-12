@@ -4,8 +4,9 @@ import { PublicKey } from "@solana/web3.js";
 import { looksSecret } from "./secret";
 import { shareScore } from "./share";
 import { fetchScanInput, rpc } from "./rpc";
-import { CLOSE_FEE_BPS, closeFee, rentOf, scan, shortKey, solWithUsd, type Action, type Finding, type ScanInput, type ScanResult, type Severity } from "./scan";
+import { CLOSE_FEE_BPS, closeFee, DUST_USD, rentOf, scan, shortKey, solWithUsd, type Action, type Finding, type ScanInput, type ScanResult, type Severity } from "./scan";
 import { buildTransaction, describeAction, describeFee, groupFee, packActions, TXS_PER_APPROVAL } from "./tx";
+import { buildDustTx, JUPITER_GAP_MS } from "./dust";
 import { connect, connectSilently, disconnect, listWallets, onWalletsChange, registerMobile, signAndSendMany, type Connected } from "./wallet";
 import { buyGuard, forgetGuardSession, guardOffered, guardPriceUsd, isGuardMember, onGuardChange, setGuardWallet } from "./guard";
 
@@ -259,7 +260,7 @@ function renderReport(): void {
 
 // ---------- the card beside the headline: an example until a wallet is scanned, then that wallet's own report ----------
 const HERO_EXAMPLE = $(".herocard").innerHTML;
-const HERO_BUTTON: Record<Action["kind"], string> = { revoke: "Revoke", close: "Claim", burnClose: "Burn", withdrawNonce: "Withdraw", closePump: "Claim", burnNft: "Burn" };
+const HERO_BUTTON: Record<Action["kind"], string> = { revoke: "Revoke", close: "Claim", burnClose: "Burn", withdrawNonce: "Withdraw", closePump: "Claim", burnNft: "Burn", sellDust: "Sell" };
 /** "0.0412" for small amounts, "1.25" for bigger ones: the card has little room. */
 const shortSol = (lamports: number) => { const s = lamports / 1e9; return (s >= 1 ? s.toFixed(2) : s >= 0.01 ? s.toFixed(3) : s.toFixed(4)).replace(/\.?0+$/, ""); };
 
@@ -334,7 +335,7 @@ function applyPendingFix(): void {
   result.findings.forEach((f, i) => {
     if (!f.action) return;
     // ?fix= selects only the action on that exact account, and never a burn that is left unticked on purpose.
-    if ((p.claim && f.action.kind === "close" && !f.keep) || (p.fix && actionAccount(f.action) === p.fix && !((f.action.kind === "burnClose" || f.action.kind === "burnNft") && f.keep))) { selected.add(i); n++; }
+    if ((p.claim && f.action.kind === "close" && !f.keep) || (p.fix && actionAccount(f.action) === p.fix && !((f.action.kind === "burnClose" || f.action.kind === "burnNft" || f.action.kind === "sellDust") && f.keep))) { selected.add(i); n++; }
   });
   restoreChecks();
   renderFixBar();
@@ -374,7 +375,18 @@ const GROUP_TITLE: Record<string, (n: number) => string> = {
   phishing: (n) => `${n} tokens that look like phishing airdrops`,
   nonce: (n) => `${n} durable nonce accounts tied to your wallet`,
   stake: (n) => `${n} stake accounts with someone else's authority`,
+  dust: (n) => `${n} small balances you could sell for SOL`,
+  nftRent: (n) => `${n} NFTs you could burn for their rent`,
 };
+
+/** A group's paragraph: the first finding's, except for sales, where one token's amount would read as the total. */
+function groupDetail(fs: Finding[], idx: number[]): string {
+  const first = fs[idx[0]];
+  if (first.check !== "dust") return first.detail;
+  const total = idx.reduce((sum, i) => sum + (fs[i].action ? rentOf(fs[i].action!) : 0), 0);
+  const bps = feeBps();
+  return `Each is worth under US$${DUST_USD}. Selling them for SOL through Jupiter and closing their accounts returns about ${solWithUsd(total, result?.solPriceUsd ?? null)} in total to you${bps ? `, less SealGuard's ${bps / 100}% fee` : ""}. The final amount depends on the price when you sign.`;
+}
 
 function groupCard(fs: Finding[], idx: number[]): string {
   const first = fs[idx[0]];
@@ -397,7 +409,7 @@ function groupCard(fs: Finding[], idx: number[]): string {
     ? `<label class="act"><input type="checkbox" class="groupbox" data-i="${recommended.join(",")}"${off}> ${label}</label>${kept ? `<p class="small muted">${kept} left unticked on purpose; open the list to see why or to tick them yourself.</p>` : ""}`
     : withAction.length ? `<p class="small muted">All ${withAction.length} are left unticked on purpose; open the list to see why or to tick them yourself.</p>` : "";
   const show = `Show all ${n}`;
-  return `<div class="card sev-${first.severity}"><div class="sev">${SEV_LABEL[first.severity]}</div><h3>${esc((GROUP_TITLE[first.check] ?? ((k: number) => `${k} findings`))(n))}</h3><p>${esc(first.detail)}</p><button class="more linkbtn" data-show="${show}">${show}</button><ul class="grouplist small" hidden>${items}</ul>${action}</div>`;
+  return `<div class="card sev-${first.severity}"><div class="sev">${SEV_LABEL[first.severity]}</div><h3>${esc((GROUP_TITLE[first.check] ?? ((k: number) => `${k} findings`))(n))}</h3><p>${esc(groupDetail(fs, idx))}</p><button class="more linkbtn" data-show="${show}">${show}</button><ul class="grouplist small" hidden>${items}</ul>${action}</div>`;
 }
 
 function card(f: Finding, i: number): string {
@@ -414,6 +426,7 @@ function actionLabel(a: Action): string {
     case "withdrawNonce": return "Withdraw the nonce account to my wallet";
     case "closePump": return "Close it and take the SOL back";
     case "burnNft": return "Burn the NFT and take the SOL back";
+    case "sellDust": return "Sell it for SOL and close the account";
   }
 }
 
@@ -427,11 +440,15 @@ function renderFixBar(): void {
   // account" lines pushed the button off the screen.
   const list = $("#fixlist");
   const bps = feeBps();
-  const fee = acts.length && connected ? packActions(acts, new PublicKey(connected.address), { feeBps: bps }).reduce((sum, g) => sum + groupFee(g, bps), 0) : 0;
+  const fee = acts.length && connected ? estimatedFee(acts, new PublicKey(connected.address), bps) : 0;
   list.innerHTML = acts.map((a) => `<li>${esc(describeAction(a))}</li>`).join("") + (fee ? `<li>${esc(describeFee(fee))}</li>` : "");
   const closing = acts.reduce((sum, a) => sum + rentOf(a), 0);
   const price = result?.solPriceUsd ?? null;
+  const selling = acts.some((a) => a.kind === "sellDust");
   $("#fixfee").textContent = !closing ? "All selected fixes are free."
+    : selling ? (bps
+      ? `Closing accounts and selling small balances returns about ${solWithUsd(closing - fee, price)} to you after SealGuard's ${bps / 100}% fee (${solWithUsd(fee, price)}). Sales go through Jupiter at the price when you sign. Revoking and burning are free. Free for wallets with the guard.`
+      : `Closing accounts and selling small balances returns about ${solWithUsd(closing, price)} to you. Sales go through Jupiter at the price when you sign. No fee: this wallet has the guard.`)
     : bps ? `Closing empty accounts returns ${solWithUsd(closing - closeFee(closing, bps), price)} to you after SealGuard's ${bps / 100}% fee (${solWithUsd(closeFee(closing, bps), price)}). Revoking and burning are free. Free for wallets with the guard.`
     : `Closing empty accounts returns ${solWithUsd(closing, price)} to you. No fee: this wallet has the guard.`;
   list.hidden = true;
@@ -442,6 +459,13 @@ function renderFixBar(): void {
   const toggle = $<HTMLButtonElement>("#fixtoggle");
   toggle.hidden = acts.length === 0;
   toggle.textContent = `Show what will be sent (${list.children.length})`;
+}
+
+/** The fee on screen: packed fixes as they'll be sent, plus each sale on its own (estimated at the scan's prices). */
+function estimatedFee(acts: Action[], owner: PublicKey, bps: number): number {
+  const packed = acts.filter((a) => a.kind !== "sellDust");
+  return (packed.length ? packActions(packed, owner, { feeBps: bps }).reduce((sum, g) => sum + groupFee(g, bps), 0) : 0)
+    + acts.filter((a) => a.kind === "sellDust").reduce((sum, a) => sum + closeFee(rentOf(a), bps), 0);
 }
 
 /** Fix stays off while a burn is selected and not acknowledged. */
@@ -479,8 +503,10 @@ function closeUpsell(): void {
 
 async function doFix(): Promise<void> {
   if (!connected || !result) return;
-  const actions = [...selected].sort((a, b) => a - b).map((i) => result!.findings[i].action!).filter(Boolean);
-  if (!actions.length) return;
+  const all = [...selected].sort((a, b) => a - b).map((i) => result!.findings[i].action!).filter(Boolean);
+  if (!all.length) return;
+  const actions = all.filter((a) => a.kind !== "sellDust");
+  const sales = all.filter((a): a is Extract<Action, { kind: "sellDust" }> => a.kind === "sellDust");
   const owner = new PublicKey(connected.address);
   const bps = feeBps();
   const groups = packActions(actions, owner, { feeBps: bps });
@@ -488,7 +514,7 @@ async function doFix(): Promise<void> {
   const log = $("#fixlog");
   log.innerHTML = "";
   $("#fixbtn").toggleAttribute("disabled", true);
-  let sent = 0, failed = 0, closes = 0, closeLamports = 0, feeLamports = 0;
+  let sent = 0, failed = 0, closes = 0, closeLamports = 0, feeLamports = 0, stopped = false;
   try {
     for (let r = 0; r < rounds; r++) {
       const chunk = groups.slice(r * TXS_PER_APPROVAL, (r + 1) * TXS_PER_APPROVAL);
@@ -546,7 +572,42 @@ async function doFix(): Promise<void> {
           const n = rest.reduce((sum, g) => sum + g.length, 0);
           log.innerHTML += `<li class="err">Not sent: ${rest.length} more transaction${rest.length === 1 ? "" : "s"} (${n} action${n === 1 ? "" : "s"}) after the wallet stopped. Press Fix selected again to send them.</li>`;
         }
+        stopped = true;
         break;
+      }
+    }
+    // Sales: one transaction each, built from a fresh Jupiter quote and simulated; the ones Jupiter can't route or
+    // Solana would refuse are left out, the rest go to the wallet together.
+    if (sales.length && !stopped) {
+      const bh = await rpc<any>("getLatestBlockhash", [{ commitment: "confirmed" }]);
+      const ready: { a: (typeof sales)[number]; tx: import("@solana/web3.js").VersionedTransaction; out: number; fee: number }[] = [];
+      let noRoute = 0, refused = 0;
+      for (let k = 0; k < sales.length; k++) {
+        setStatus(`Getting a price from Jupiter (${k + 1} of ${sales.length})…`, "busy");
+        if (k) await new Promise((ok) => setTimeout(ok, JUPITER_GAP_MS));
+        const b = await buildDustTx(sales[k], owner, { feeBps: bps, blockhash: bh.value.blockhash, rpc });
+        if (b.ok) ready.push({ a: sales[k], tx: b.tx, out: b.outLamports, fee: b.feeLamports });
+        else if (b.reason === "noroute") noRoute++;
+        else refused++;
+      }
+      if (noRoute) { failed += noRoute; log.innerHTML += `<li class="err">${noRoute === 1 ? "1 sale was" : `${noRoute} sales were`} left out because Jupiter couldn't find a buyer right now.</li>`; }
+      if (refused) { failed += refused; log.innerHTML += `<li class="err">${refused === 1 ? "1 fix was" : `${refused} fixes were`} left out because Solana would refuse ${refused === 1 ? "it" : "them"} right now.${ready.length ? " The rest are ready to sign." : ""}</li>`; }
+      for (let r = 0; r < ready.length && !stopped; r += TXS_PER_APPROVAL) {
+        const chunk = ready.slice(r, r + TXS_PER_APPROVAL);
+        setStatus(`Waiting for your approval in the wallet (${chunk.length} transaction${chunk.length === 1 ? "" : "s"})…`, "busy");
+        const results = await signAndSendMany(connected, chunk.map((x) => x.tx), async (raw) => rpc<string>("sendTransaction", [Buffer.from(raw).toString("base64"), { encoding: "base64", preflightCommitment: "confirmed" }]));
+        results.forEach((res, k) => {
+          const x = chunk[k];
+          if (res.ok) {
+            sent++; closes++; closeLamports += x.a.rent + x.out; feeLamports += x.fee;
+            log.innerHTML += `<li>Sent <a href="https://solscan.io/tx/${esc(res.signature)}" target="_blank" rel="noopener">${esc(res.signature.slice(0, 8))}…</a> (1 action)</li>`;
+          } else {
+            failed++;
+            log.innerHTML += `<li class="err">Not sent (1 action): ${esc(res.error)}</li>`;
+          }
+        });
+        for (let k = results.length; k < chunk.length; k++) { failed++; log.innerHTML += `<li class="err">Not sent (1 action): the wallet didn't return this transaction.</li>`; }
+        if (results.length < chunk.length || results.every((x) => !x.ok)) stopped = true;
       }
     }
     void reportStat("fix", { closes, lamports: closeLamports, fee: feeLamports, address });

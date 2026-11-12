@@ -3,7 +3,12 @@
 import { getWallets } from "@wallet-standard/app";
 import type { Wallet, WalletAccount } from "@wallet-standard/base";
 import { registerMwa, createDefaultAuthorizationCache, createDefaultChainSelector, createDefaultWalletNotFoundHandler } from "@solana-mobile/wallet-standard-mobile";
-import { Transaction } from "@solana/web3.js";
+import { Transaction, VersionedTransaction } from "@solana/web3.js";
+
+/** Wire bytes of a legacy or a v0 transaction, unsigned. */
+export function txBytes(tx: Transaction | VersionedTransaction): Uint8Array {
+  return tx instanceof VersionedTransaction ? tx.serialize() : tx.serialize({ requireAllSignatures: false, verifySignatures: false });
+}
 import { nativePlugin, registerNativeWallet } from "./native";
 
 const CHAIN = "solana:mainnet";
@@ -93,8 +98,8 @@ export async function disconnect(c: Connected): Promise<void> {
 }
 
 /** Signs and sends one legacy transaction; returns the signature (base58). Prefers the wallet's own send. */
-export async function signAndSend(c: Connected, tx: Transaction, sendRaw: (raw: Uint8Array) => Promise<string>): Promise<string> {
-  const bytes = tx.serialize({ requireAllSignatures: false, verifySignatures: false });
+export async function signAndSend(c: Connected, tx: Transaction | VersionedTransaction, sendRaw: (raw: Uint8Array) => Promise<string>): Promise<string> {
+  const bytes = txBytes(tx);
   const sas: any = c.wallet.features["solana:signAndSendTransaction"];
   if (sas) {
     const [out] = await sas.signAndSendTransaction({ account: c.account, chain: CHAIN, transaction: bytes, options: { preflightCommitment: "confirmed" } });
@@ -111,8 +116,8 @@ export type SendResult = { ok: true; signature: string } | { ok: false; error: s
  * Signs and sends several transactions with one approval where the wallet allows it: the wallet's own
  * signAndSendAllTransactions, else signTransaction with several inputs (we send them), else one by one.
  */
-export async function signAndSendMany(c: Connected, txs: Transaction[], sendRaw: (raw: Uint8Array) => Promise<string>): Promise<SendResult[]> {
-  const inputs = txs.map((tx) => ({ account: c.account, chain: CHAIN, transaction: tx.serialize({ requireAllSignatures: false, verifySignatures: false }) }));
+export async function signAndSendMany(c: Connected, txs: (Transaction | VersionedTransaction)[], sendRaw: (raw: Uint8Array) => Promise<string>): Promise<SendResult[]> {
+  const inputs = txs.map((tx) => ({ account: c.account, chain: CHAIN, transaction: txBytes(tx) }));
   const all: any = c.wallet.features["solana:signAndSendAllTransactions"];
   if (all && txs.length > 1) {
     const settled = await all.signAndSendAllTransactions(inputs.map((i) => ({ ...i, options: { preflightCommitment: "confirmed" } })), { mode: "parallel" });
