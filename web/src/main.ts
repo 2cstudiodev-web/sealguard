@@ -549,7 +549,7 @@ async function doFix(): Promise<void> {
         break;
       }
     }
-    void reportStat("fix", { closes, lamports: closeLamports, fee: feeLamports });
+    void reportStat("fix", { closes, lamports: closeLamports, fee: feeLamports, address });
     setStatus(failed ? `${sent} sent, ${failed} not sent. Rescanning…` : "Done. Rescanning…", failed ? "err" : "busy");
     await new Promise((r) => setTimeout(r, 2500));
     await doScan();
@@ -562,7 +562,8 @@ async function doFix(): Promise<void> {
 
 /**
  * Counters for 2C Studio: how many scans, how many accounts closed, how much fee. A scan also sends the address, how
- * it was scanned and the result, kept as a scan record (privacy notice, "Scanning").
+ * it was scanned and the result, kept as a scan record (privacy notice, "Scanning"). A fix sends the wallet only so
+ * 2C Studio's own wallets can be left out; it isn't stored.
  */
 async function reportStat(kind: "scan" | "fix", data: Record<string, unknown> = {}): Promise<void> {
   try { await fetch("/api/stat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind, ...data }), keepalive: true }); } catch { /* best effort */ }

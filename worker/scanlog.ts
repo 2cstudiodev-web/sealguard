@@ -25,9 +25,23 @@ export function cleanSource(s: unknown): string | null {
   return t || null;
 }
 
-/** Best effort: a failed write never breaks a scan. */
+/**
+ * 2C Studio's own use is not counted: a browser that has opened 2C Control carries the cookie `2c_own=1` (set for
+ * all of 2cstudio.app), and the owner's and test wallets are listed in the table own_wallets.
+ */
+export function ownDevice(request: Request): boolean {
+  return /(?:^|;\s*)2c_own=1(?:;|$)/.test(request.headers.get("cookie") ?? "");
+}
+
+export async function ownWallet(db: D1Database, address: string | null | undefined): Promise<boolean> {
+  if (!address) return false;
+  try { return Boolean(await db.prepare("SELECT 1 FROM own_wallets WHERE address = ?").bind(address).first()); } catch { return false; }
+}
+
+/** Best effort: a failed write never breaks a scan. Scans of 2C Studio's own wallets are not logged. */
 export async function logScan(db: D1Database, r: ScanRow): Promise<void> {
   try {
+    if (await ownWallet(db, r.address)) return;
     await db.prepare(
       "INSERT INTO scan_log (at, address, via, score, critical, high, medium, low, reclaim_accounts, reclaim_lamports, source, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     ).bind(r.at, r.address, r.via, r.score, r.critical, r.high, r.medium, r.low, r.reclaimAccounts, r.reclaimLamports, r.source, r.country).run();

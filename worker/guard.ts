@@ -6,7 +6,7 @@ import { solWithUsd } from "../web/src/scan";
 import { bearer, checkSignIn, FRESH_SIGNIN_MS, issueToken, makeNonce, safeEqualText, siwsMessage, verifySession, verifyToken, webhookSecret } from "./auth";
 import { buildQuotes, extendPaidUntil, GUARD_USD, jupiterPrices, TEST_QUOTES, PAY_SLACK_MS, PAY_TOKENS, QUOTE_TTL_MS, SKR_MINT, verifyPaymentTx, WSOL_MINT, type ParsedTx, type PayToken } from "./pay";
 import { esc, sendTelegram, setWebhook, startCode } from "./telegram";
-import { cleanSource, logScan, SCAN_VIA, validWallet, type ScanVia } from "./scanlog";
+import { cleanSource, logScan, ownDevice, ownWallet, SCAN_VIA, validWallet, type ScanVia } from "./scanlog";
 
 export interface GuardEnv {
   DB: D1Database;
@@ -117,6 +117,8 @@ export async function handleApi(request: Request, env: GuardEnv, path: string, n
       const kind = b.kind === "scan" || b.kind === "fix" ? b.kind : null;
       if (!kind) throw new ApiError(400, "bad_stat");
       const num = (v: unknown, max: number) => (Number.isInteger(v) && (v as number) >= 0 && (v as number) <= max ? (v as number) : 0);
+      // 2C Studio's own browsers and wallets are not counted (the fix's wallet is only checked, never stored).
+      if (ownDevice(request) || (await ownWallet(env.DB, validWallet(b.address)))) return json({ ok: true });
       const day = new Date(now).toISOString().slice(0, 10);
       await env.DB.prepare("INSERT INTO daily_stats (day, kind, n, closes, lamports, fee) VALUES (?, ?, 1, ?, ?, ?) ON CONFLICT(day, kind) DO UPDATE SET n = n + 1, closes = closes + excluded.closes, lamports = lamports + excluded.lamports, fee = fee + excluded.fee")
         .bind(day, kind, num(b.closes, 100_000), num(b.lamports, 1e13), num(b.fee, 1e12)).run();
