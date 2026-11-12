@@ -15,8 +15,31 @@ export function registerMobile(): void {
   if (mwaRegistered || typeof window === "undefined") return;
   mwaRegistered = true;
   // Inside the SealGuard app the browser adapter can't reach the wallet; the app's own plugin takes its place.
+  // The app's bridge can arrive a moment after this script runs, so wait for it (the app marks its user agent).
   const native = nativePlugin();
   if (native) { registerNativeWallet(native); return; }
+  if (inApp()) {
+    void waitForNative().then((p) => { if (p) registerNativeWallet(p); else registerBrowserAdapter(); });
+    return;
+  }
+  registerBrowserAdapter();
+}
+
+/** True inside the SealGuard Android app (it adds "SealGuardApp" to the user agent and opens with ?app=android). */
+function inApp(): boolean {
+  return /SealGuardApp/.test(navigator.userAgent) || new URLSearchParams(location.search).get("app") === "android";
+}
+
+async function waitForNative(): Promise<ReturnType<typeof nativePlugin>> {
+  for (let i = 0; i < 50; i++) {
+    const p = nativePlugin();
+    if (p) return p;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return null;
+}
+
+function registerBrowserAdapter(): void {
   try {
     registerMwa({
       appIdentity: { name: "SealGuard", uri: window.location.origin, icon: "icon.png" },
