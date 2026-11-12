@@ -23,7 +23,9 @@ const CORS = {
   "access-control-allow-headers": "authorization, content-type, mcp-protocol-version, mcp-session-id, last-event-id",
   "access-control-expose-headers": "mcp-session-id",
 };
-const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", "cache-control": "no-store", ...CORS } });
+// "data:" is sent as the JSON escape data\u003a (the same JSON once parsed): some directory checkers treat any
+// body containing "data:" as server-sent events and then fail to find the result (the instructions say "chain data:").
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body).replace(/data:/g, "data\\u003a"), { status, headers: { "content-type": "application/json", "cache-control": "no-store", ...CORS } });
 
 const SERVER_INFO = {
   name: "sealguard",
