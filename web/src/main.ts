@@ -149,6 +149,7 @@ async function doDisconnect(): Promise<void> {
   $("#walletpick").hidden = true;
   $("#navconnect").textContent = "Connect wallet";
   setStatus("");
+  renderHeroCard();
 }
 
 async function doScan(): Promise<void> {
@@ -216,6 +217,65 @@ function renderReport(): void {
     b.textContent = ul.hidden ? b.dataset.show! : "Hide the list";
   }));
   renderFixBar();
+  renderHeroCard();
+}
+
+// ---------- the card beside the headline: an example until a wallet is scanned, then that wallet's own report ----------
+const HERO_EXAMPLE = $(".herocard").innerHTML;
+const HERO_BUTTON: Record<Action["kind"], string> = { revoke: "Revoke", close: "Claim", burnClose: "Burn", withdrawNonce: "Withdraw", closePump: "Claim" };
+/** "0.0412" for small amounts, "1.25" for bigger ones: the card has little room. */
+const shortSol = (lamports: number) => { const s = lamports / 1e9; return (s >= 1 ? s.toFixed(2) : s >= 0.01 ? s.toFixed(3) : s.toFixed(4)).replace(/\.?0+$/, ""); };
+
+function renderHeroCard(): void {
+  const box = $(".herocard");
+  if (!result || !address) {
+    box.innerHTML = HERO_EXAMPLE;
+    box.setAttribute("aria-hidden", "true");
+    return;
+  }
+  box.removeAttribute("aria-hidden");
+  const r = result;
+  // Worth a line on the card: anything medium or worse, and low findings that have a fix. Low notes stay in the report.
+  const risks = r.findings.map((f, i) => ({ f, i })).filter(({ f }) => f.severity !== "ok" && (f.severity !== "low" || f.action));
+  const toFix = risks.filter(({ f }) => f.action).length;
+  const empties = r.findings.map((f, i) => ({ f, i })).filter(({ f }) => f.check === "empty" && f.action);
+  const pumps = r.findings.map((f, i) => ({ f, i })).filter(({ f }) => f.check === "pumpDeposit" && f.action);
+  const claimLamports = r.reclaim.lamports + pumps.reduce((s, { f }) => s + (f.action?.kind === "closePump" ? f.action.lamports : 0), 0);
+  const color = r.score >= 90 ? "var(--acc)" : r.score >= 60 ? "var(--meh)" : "var(--bad)";
+  const headline = r.score >= 90 ? "Looking good" : r.score >= 60 ? "A few things to fix" : "Fix these soon";
+  const sub = [toFix ? `${toFix} thing${toFix === 1 ? "" : "s"} to fix` : "", claimLamports ? `${shortSol(claimLamports)} SOL to claim back` : ""].filter(Boolean).join(", ") || "Nothing to fix, nothing to claim";
+
+  type Row = { icon: string; iconText: string; title: string; small: string; button: string; kind: string; idx: number[] };
+  const rows: Row[] = [];
+  for (const { f, i } of risks.slice(0, 2)) {
+    rows.push({ icon: "warn", iconText: "!", title: f.title, small: SEV_LABEL[f.severity], button: f.action ? HERO_BUTTON[f.action.kind] : "View", kind: "", idx: [i] });
+  }
+  if (empties.length) {
+    const suggested = empties.filter(({ f }) => !f.keep).map(({ i }) => i);
+    rows.push({ icon: "sol", iconText: "◎", title: `${empties.length} empty account${empties.length === 1 ? "" : "s"}`, small: `${shortSol(r.reclaim.lamports)} SOL rent`, button: "Claim", kind: "go", idx: suggested.length ? suggested : empties.map(({ i }) => i) });
+  }
+  for (const { f, i } of pumps) {
+    rows.push({ icon: "sol", iconText: "◎", title: `${f.action?.kind === "closePump" && f.action.program === "pumpswap" ? "PumpSwap" : "pump.fun"} deposit`, small: `${shortSol(f.action?.kind === "closePump" ? f.action.lamports : 0)} SOL`, button: "Claim", kind: "go", idx: [i] });
+  }
+  if (!rows.length) rows.push({ icon: "seek", iconText: "✓", title: "Nothing to fix", small: "Checked just now", button: "OK", kind: "ok", idx: [] });
+
+  box.innerHTML = `<div class="hc-head"><b>${connected ? "Your wallet" : "This wallet"}</b><span class="chip"><i class="dot"></i>${esc(shortKey(address))}</span></div>
+<div class="hc-score"><div class="ring" style="background:conic-gradient(${color} 0 ${r.score}%,var(--line2) ${r.score}% 100%)"><span style="color:${color}">${r.score}</span></div><div><b>${headline}</b><span>${esc(sub)}</span></div></div>
+${rows.slice(0, 4).map((x, k) => `<div class="hc-row"><span class="tk ${x.icon}">${x.iconText}</span><span class="hc-t">${esc(x.title)}<small>${esc(x.small)}</small></span>${x.idx.length ? `<button type="button" class="hc-b ${x.kind}" data-row="${k}">${esc(x.button)}</button>` : `<span class="hc-b ${x.kind}">${esc(x.button)}</span>`}</div>`).join("")}`;
+  box.querySelectorAll<HTMLButtonElement>("button[data-row]").forEach((b) => b.addEventListener("click", () => focusFindings(rows[Number(b.dataset.row)].idx)));
+}
+
+/** From the card: tick those fixes (when a wallet is connected) and scroll to their card in the report. */
+function focusFindings(idx: number[]): void {
+  if (!result) return;
+  if (connected) {
+    for (const i of idx) if (result.findings[i]?.action) selected.add(i);
+    restoreChecks();
+    renderFixBar();
+  }
+  const input = [...$("#findings").querySelectorAll<HTMLInputElement>("input[data-i]")].find((el) => String(el.dataset.i).split(",").map(Number).some((i) => idx.includes(i)));
+  const target = (input?.closest(".card") as HTMLElement | null) ?? $("#findings");
+  target.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 /** Ticks the boxes of what's selected (after a re-render, e.g. when membership changes the prices). */
