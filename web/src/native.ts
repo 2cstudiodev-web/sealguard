@@ -27,9 +27,12 @@ const store = { get: (): string | null => { try { return localStorage.getItem(AD
 
 /** The native plugin when this page runs inside the SealGuard app; null in a browser. */
 export function nativePlugin(): NativeWallet | null {
+  // The app loads this site from its server, so only Capacitor's native bridge is here (no @capacitor/core):
+  // native plugins are under Capacitor.Plugins.
   const cap = (window as any).Capacitor;
-  if (!cap?.isNativePlatform?.() || typeof cap.registerPlugin !== "function") return null;
-  return cap.registerPlugin("Wallet") as NativeWallet;
+  if (!cap?.isNativePlatform?.()) return null;
+  const p = cap.Plugins?.Wallet ?? (typeof cap.registerPlugin === "function" ? cap.registerPlugin("Wallet") : null);
+  return p && typeof p.connect === "function" ? (p as NativeWallet) : null;
 }
 
 function account(address: string): WalletAccount {
