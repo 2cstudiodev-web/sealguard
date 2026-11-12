@@ -1,0 +1,10 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.sealguard.app",
+      "sha256_cert_fingerprints": ["79:09:B4:88:CB:10:48:5D:23:07:1D:13:E8:8D:15:8C:C0:05:9C:DA:F3:EC:C5:C6:7B:7F:50:15:0D:C0:16:80"]
+    }
+  }
+]
