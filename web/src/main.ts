@@ -506,7 +506,7 @@ function openUpsell(): void {
   save.hidden = !fee;
   save.textContent = fee ? `This fix has a ${CLOSE_FEE_BPS / 100}% fee of ${solWithUsd(fee, result?.solPriceUsd ?? null)}. With the guard it's free, today and for the rest of the year.` : "";
   const price = `US$${guardPriceUsd()}`;
-  $("#upprice").textContent = `${price} a year`;
+  $("#upprice").textContent = `${price} a year (about ${Math.round((guardPriceUsd() * 100) / 365)}¢ a day)`;
   $("#uppay").textContent = `Pay ${price} for a year`;
   $("#upsell").hidden = false;
 }

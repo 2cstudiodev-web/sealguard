@@ -107,14 +107,14 @@ export async function setGuardWallet(c: Connected | null): Promise<void> {
   render();
 }
 
-const PITCH = "Get a Telegram message within the hour when something in this wallet changes for the worse: a new approval, a nonce account, a changed stake authority, a phishing airdrop, or the wallet account itself being taken over.";
+const PITCH = "For about 13¢ a day, SealGuard checks this wallet every hour and messages you on Telegram when something changes for the worse: a new approval, a nonce account, a changed stake authority, a phishing airdrop, or the wallet account itself being taken over. It's an early warning, not a shield: it can't stop a transaction.";
 
 function render(): void {
   const box = $("#gbody");
   if (!connected) return;
   notifyChange();
   if (!token || !status) {
-    box.innerHTML = `<p>${PITCH} It also makes closing empty accounts free. <b>${usd(DEFAULT_PRICE_USD)} a year</b>, paid in USDC, SOL or SKR from this wallet.</p>
+    box.innerHTML = `<p>${PITCH} Closing accounts, burning NFTs and selling small balances are also fee-free with it. <b>${usd(DEFAULT_PRICE_USD)} a year</b>, paid in USDC, SOL or SKR from this wallet.</p>
 <p class="small muted">Signing in is a signature on a short message, not a transaction: it moves nothing and costs nothing.</p>
 <button id="gsignin" class="btn primary">Sign in to set it up</button>`;
     $("#gsignin").addEventListener("click", signIn);
@@ -133,7 +133,7 @@ function render(): void {
     }
     lines.push(`<p><button id="gpay" class="btn small">Extend by a year (${usd(s.priceUsd)})</button></p><div id="gquotes"></div>`);
   } else {
-    lines.push(`<p>${PITCH} It also makes closing empty accounts free. <b>${usd(s.priceUsd)} a year</b>, paid in USDC, SOL or SKR from this wallet.</p>`);
+    lines.push(`<p>${PITCH} Closing accounts, burning NFTs and selling small balances are also fee-free with it. <b>${usd(s.priceUsd)} a year</b>, paid in USDC, SOL or SKR from this wallet.</p>`);
     lines.push(`<p>Step 1: <button id="gpay" class="btn primary small">Pay ${usd(s.priceUsd)} for a year</button></p><div id="gquotes"></div>`);
     lines.push(`<p class="small muted">Step 2, once paid: link Telegram, where the alerts arrive.</p>`);
   }
