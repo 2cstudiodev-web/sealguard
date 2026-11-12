@@ -216,6 +216,19 @@ const SEV_LABEL: Record<Severity, string> = { critical: "Critical", high: "High"
 /** The wallet the result box on top of the report belongs to; it goes away when another wallet is shown. */
 let fixResultFor: string | null = null;
 
+/**
+ * Everything the wallet could take back, after the fee: empty accounts, pump.fun deposits, small-balance sales and
+ * NFT burns. The same total on the hero card and under the score.
+ */
+function takeBack(r: ScanResult): number {
+  const bps = feeBps();
+  const net = (check: string) => {
+    const g = r.findings.filter((f) => f.check === check && f.action).reduce((s, f) => s + rentOf(f.action!), 0);
+    return g - closeFee(g, bps);
+  };
+  return r.reclaim.net + net("pumpDeposit") + net("dust") + net("nftRent");
+}
+
 function renderReport(): void {
   if (!result) return;
   const r = result;
@@ -230,11 +243,10 @@ function renderReport(): void {
     ? `${r.findings.length} finding${r.findings.length > 1 ? "s" : ""}: ${parts.join(", ")}.`
     : "Nothing to flag. Nobody but you can move your tokens, no phishing tokens, no stray nonce or stake authorities.";
   const reclaim = $("#reclaim");
-  reclaim.hidden = r.reclaim.accounts === 0;
-  const plural = r.reclaim.accounts === 1 ? "" : "s";
-  reclaim.textContent = !r.reclaim.accounts ? ""
-    : r.reclaim.fee ? `You can get ${solWithUsd(r.reclaim.net, r.solPriceUsd)} back by closing ${r.reclaim.accounts} empty token account${plural} (${solWithUsd(r.reclaim.lamports, null)} of rent, less SealGuard's ${CLOSE_FEE_BPS / 100}% fee).`
-    : `You can get ${solWithUsd(r.reclaim.net, r.solPriceUsd)} back by closing ${r.reclaim.accounts} empty token account${plural}, with no fee because this wallet has the guard.`;
+  const back = takeBack(r);
+  reclaim.hidden = back <= 0;
+  reclaim.textContent = back <= 0 ? ""
+    : `You can get about ${solWithUsd(back, r.solPriceUsd)} back: empty accounts, deposits, small balances and NFT burns, ${feeBps() ? `after SealGuard's ${feeBps() / 100}% fee` : "with no fee because this wallet has the guard"}.`;
   $("#checked").textContent = `Looked at ${r.checked.tokenAccounts} token accounts, ${r.checked.mints} Token-2022 mints, ${r.checked.stakes} stake accounts and ${r.checked.nonces} nonce accounts.` + (r.warnings.length ? ` ${r.warnings.join(" ")}` : "");
 
   const list = $("#findings");
@@ -288,7 +300,7 @@ function renderHeroCard(): void {
   const sum = (xs: { f: Finding }[]) => { const g = xs.reduce((s, { f }) => s + (f.action ? rentOf(f.action) : 0), 0); return g - closeFee(g, feeBps()); };
   const pumpLamports = pumps.reduce((s, { f }) => s + (f.action?.kind === "closePump" ? f.action.lamports : 0), 0);
   // Everything that can come back: empty accounts, deposits, sales and NFT burns (the last two are never ticked for you).
-  const claimLamports = r.reclaim.net + pumpLamports - closeFee(pumps.reduce((s, { f }) => s + (f.action ? rentOf(f.action) : 0), 0), feeBps()) + sum(dust) + sum(nfts);
+  const claimLamports = takeBack(r);
   const color = r.score >= 90 ? "var(--acc)" : r.score >= 60 ? "var(--meh)" : "var(--bad)";
   const headline = r.score >= 90 ? "Looking good" : r.score >= 60 ? "A few things to fix" : "Fix these soon";
   const sub = [toFix ? `${toFix} thing${toFix === 1 ? "" : "s"} to fix` : "", claimLamports ? `${shortSol(claimLamports)} SOL you could take back` : ""].filter(Boolean).join(", ") || "Nothing to fix, nothing to claim";

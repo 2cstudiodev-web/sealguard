@@ -400,12 +400,21 @@ export function scan(input: ScanInput, opts: ScanOptions = {}): ScanResult {
         });
       }
       const odd = mint.extensions.filter((e) => e === "transferHook" || e === "nonTransferable" || (e === "defaultAccountState" && mint.defaultState === "frozen"));
-      if (odd.length && t.amount > 0n) {
-        const words = odd.map((e) => (e === "transferHook" ? "a transfer hook (a program runs on every transfer and can block it)" : e === "nonTransferable" ? "non-transferable (it can never leave this wallet)" : "frozen by default")).join(", ");
+      if (odd.length && t.amount > 0n && odd.every((e) => e === "transferHook") && assets[t.mint]?.priced) {
+        // A token with a market price whose only restriction is a transfer hook (PYUSD): regulated tokens do this on
+        // purpose. A note, no score change.
+        f.push({
+          check: "mintExtensions", severity: "ok",
+          title: `${name} runs a program on every transfer`,
+          detail: "Its issuer added a transfer hook, a program that checks every transfer. Regulated tokens use this on purpose; nothing to do unless you don't trust the issuer.",
+          accounts: [t.address, t.mint],
+        });
+      } else if (odd.length && t.amount > 0n) {
+        const words = odd.map((e) => (e === "transferHook" ? "has a transfer hook (a program runs on every transfer and can block it)" : e === "nonTransferable" ? "is non-transferable (it can never leave this wallet)" : "is frozen by default")).join(", ");
         f.push({
           check: "mintExtensions", severity: "low",
           title: `${name} has restrictions built in`,
-          detail: `The token is ${words}. That's not an attack by itself, but it's how some scam tokens trap you: you can receive them and never sell them.`,
+          detail: `The token ${words}. That's not an attack by itself, but it's how some scam tokens trap you: you can receive them and never sell them.`,
           accounts: [t.address, t.mint],
         });
       }
