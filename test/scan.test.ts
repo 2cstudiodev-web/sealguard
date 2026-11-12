@@ -52,7 +52,7 @@ describe("scan", () => {
     const one = scan(input({ tokenAccounts: [acct({ amount: 1n, delegate: OTHER, delegatedAmount: 1n })] }));
     expect(one.score).toBe(75);
     const two = scan(input({ tokenAccounts: [acct({ amount: 1n, delegate: OTHER, delegatedAmount: 1n }), acct({ address: "b", amount: 1n, delegate: OTHER, delegatedAmount: 1n })] }));
-    expect(two.score).toBe(68.75);
+    expect(two.score).toBe(69); // 68.75, shown in whole points
     const many = scan(input({ tokenAccounts: Array.from({ length: 20 }, (_, i) => acct({ address: `a${i}`, amount: 1n, delegate: OTHER, delegatedAmount: 1n })) }));
     expect(many.score).toBe(50);
   });
