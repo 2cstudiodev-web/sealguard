@@ -284,10 +284,11 @@ function renderHeroCard(): void {
   const pumps = r.findings.map((f, i) => ({ f, i })).filter(({ f }) => f.check === "pumpDeposit" && f.action);
   const dust = r.findings.map((f, i) => ({ f, i })).filter(({ f }) => f.check === "dust" && f.action);
   const nfts = r.findings.map((f, i) => ({ f, i })).filter(({ f }) => f.action?.kind === "burnNft");
-  const sum = (xs: { f: Finding }[]) => xs.reduce((s, { f }) => s + (f.action ? rentOf(f.action) : 0), 0);
+  // After the fee, like the report's titles (the same number in both places).
+  const sum = (xs: { f: Finding }[]) => { const g = xs.reduce((s, { f }) => s + (f.action ? rentOf(f.action) : 0), 0); return g - closeFee(g, feeBps()); };
   const pumpLamports = pumps.reduce((s, { f }) => s + (f.action?.kind === "closePump" ? f.action.lamports : 0), 0);
   // Everything that can come back: empty accounts, deposits, sales and NFT burns (the last two are never ticked for you).
-  const claimLamports = r.reclaim.lamports + pumpLamports + sum(dust) + sum(nfts);
+  const claimLamports = r.reclaim.net + pumpLamports - closeFee(pumps.reduce((s, { f }) => s + (f.action ? rentOf(f.action) : 0), 0), feeBps()) + sum(dust) + sum(nfts);
   const color = r.score >= 90 ? "var(--acc)" : r.score >= 60 ? "var(--meh)" : "var(--bad)";
   const headline = r.score >= 90 ? "Looking good" : r.score >= 60 ? "A few things to fix" : "Fix these soon";
   const sub = [toFix ? `${toFix} thing${toFix === 1 ? "" : "s"} to fix` : "", claimLamports ? `${shortSol(claimLamports)} SOL you could take back` : ""].filter(Boolean).join(", ") || "Nothing to fix, nothing to claim";
