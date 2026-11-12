@@ -4,6 +4,7 @@ import { getWallets } from "@wallet-standard/app";
 import type { Wallet, WalletAccount } from "@wallet-standard/base";
 import { registerMwa, createDefaultAuthorizationCache, createDefaultChainSelector, createDefaultWalletNotFoundHandler } from "@solana-mobile/wallet-standard-mobile";
 import { Transaction } from "@solana/web3.js";
+import { nativePlugin, registerNativeWallet } from "./native";
 
 const CHAIN = "solana:mainnet";
 
@@ -13,6 +14,9 @@ let mwaRegistered = false;
 export function registerMobile(): void {
   if (mwaRegistered || typeof window === "undefined") return;
   mwaRegistered = true;
+  // Inside the SealGuard app the browser adapter can't reach the wallet; the app's own plugin takes its place.
+  const native = nativePlugin();
+  if (native) { registerNativeWallet(native); return; }
   try {
     registerMwa({
       appIdentity: { name: "SealGuard", uri: window.location.origin, icon: "icon.png" },

@@ -545,19 +545,13 @@ for (const id of ["#addrinput", "#heroinput"]) $<HTMLInputElement>(id).addEventL
   if (!stopSecret(v) && v.trim()) $("#herowarn").hidden = true;
 });
 $("#heroconnect").addEventListener("click", navConnect);
-// Paste: one tap on a phone. Shown only where the browser can read the clipboard; if it can't, the box gets focus.
-if (navigator.clipboard?.readText) {
+// Paste (touch screens): puts the cursor in the box so the keyboard opens, where the phone offers what was just
+// copied as a one-tap paste. Reading the clipboard ourselves would need a permission prompt (Chrome) or not work at
+// all (in-app browsers and the SealGuard app), and a security tool shouldn't ask to read the clipboard.
+if (window.matchMedia?.("(pointer: coarse)").matches) {
   const pasteBtn = $<HTMLButtonElement>("#heropaste");
   pasteBtn.hidden = false;
-  pasteBtn.addEventListener("click", async () => {
-    const box = $<HTMLInputElement>("#heroinput");
-    let text = "";
-    try { text = (await navigator.clipboard.readText()).trim(); } catch { box.focus(); return; }
-    if (!text) { box.focus(); return; }
-    if (stopSecret(text)) return;
-    box.value = text;
-    doScanAddress(new Event("submit"), box);
-  });
+  pasteBtn.addEventListener("click", () => $<HTMLInputElement>("#heroinput").focus());
 }
 $("#scanbtn").addEventListener("click", doScan);
 $("#disconnect").addEventListener("click", doDisconnect);
