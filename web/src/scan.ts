@@ -569,7 +569,7 @@ export function scan(input: ScanInput, opts: ScanOptions = {}): ScanResult {
   const emptyLamports = f.reduce((sum, x) => sum + (x.action?.kind === "close" ? x.action.lamports : 0), 0);
   // The fee on the same base the transactions use (rent, capped at the rent-exempt minimum); everything comes back.
   const emptyFee = closeFee(f.reduce((sum, x) => sum + (x.action?.kind === "close" ? rentOf(x.action) : 0), 0), feeBps);
-  const score = Math.max(0, 100 - scorePenalty(f));
+  const score = Math.max(0, Math.round(100 - scorePenalty(f))); // whole points: a quarter penalty can leave .5
   return {
     score, findings: f, counts,
     checked: { tokenAccounts: tokenAccounts.length, mints: Object.keys(mints).length, stakes: input.stakes.length, nonces: input.nonces.length },
