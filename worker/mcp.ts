@@ -7,7 +7,7 @@
 // Docs for people: /docs/mcp (web/public/docs/mcp.html).
 import { PublicKey } from "@solana/web3.js";
 import { fetchScanInput, rpcOver } from "../shared/chain";
-import { CLOSE_FEE_BPS, scan, type Finding, type ScanResult } from "../web/src/scan";
+import { CLOSE_FEE_BPS, rentOf, scan, type Finding, type ScanResult } from "../web/src/scan";
 import type { GuardEnv } from "./guard";
 import { logScan } from "./scanlog";
 
@@ -35,21 +35,21 @@ const SERVER_INFO = {
   icons: [{ src: `${ORIGIN}/logo.svg`, mimeType: "image/svg+xml", sizes: ["any"] }, { src: `${ORIGIN}/icon.png`, mimeType: "image/png", sizes: ["512x512"] }],
 };
 
-const INSTRUCTIONS = "SealGuard checks a Solana wallet from public chain data: token approvals, phishing airdrops, Token-2022 permanent delegates, stake and nonce authorities, a taken-over wallet account, and empty token accounts holding SOL rent that can be taken back. It is read-only: it never asks for a seed phrase and can't send transactions. To fix anything, send the user to the link in the result, where they connect their own wallet and approve each fix.";
+const INSTRUCTIONS = "SealGuard checks a Solana wallet from public chain data: token approvals, phishing airdrops, Token-2022 permanent delegates, stake and nonce authorities, a taken-over wallet account, and SOL that can be taken back: empty token accounts, pump.fun deposits, small balances that can be sold, and NFTs that can be burnt. It is read-only: it never asks for a seed phrase and can't send transactions. To fix anything, send the user to the link in the result, where they connect their own wallet and approve each fix.";
 
 const ADDRESS = { type: "object", properties: { address: { type: "string", description: "The Solana wallet address (base58 public key) to check." } }, required: ["address"], additionalProperties: false };
 export const TOOLS = [
   {
     name: "scan_wallet",
     title: "Check a Solana wallet",
-    description: "Checks a Solana wallet for risks and gives a 0-100 safety score: open token approvals, phishing airdrops, Token-2022 permanent delegates and transfer restrictions, stake and nonce accounts controlled by someone else, and whether the wallet account itself has been taken over. Also totals the SOL locked in empty token accounts. Read-only; returns a link where the owner can fix what was found.",
+    description: "Checks a Solana wallet for risks and gives a 0-100 safety score: open token approvals, phishing airdrops, Token-2022 permanent delegates and transfer restrictions, stake and nonce accounts controlled by someone else, and whether the wallet account itself has been taken over. Also totals the SOL the wallet could take back: empty token accounts, pump.fun deposits, small balances it could sell, and NFTs it could burn. Read-only; returns a link where the owner can fix what was found.",
     inputSchema: ADDRESS,
     annotations: { readOnlyHint: true, openWorldHint: true },
   },
   {
     name: "list_empty_token_accounts",
-    title: "List empty token accounts and the SOL in them",
-    description: "Lists a Solana wallet's empty token accounts (left behind by sold or sent tokens), the SOL rent locked in each, and which ones SealGuard suggests closing. Accounts for tokens the owner will likely receive again, or used in the last 30 days, are marked to keep, with the reason. Also lists pump.fun and PumpSwap deposits the wallet can take back. Read-only; returns a link where the owner can close them.",
+    title: "List the SOL a wallet can take back",
+    description: "Lists the SOL a Solana wallet could take back: empty token accounts (left behind by sold or sent tokens) with the rent in each and which ones SealGuard suggests closing (accounts for tokens the owner will likely receive again, or used in the last 30 days, are marked to keep, with the reason); pump.fun and PumpSwap deposits; small balances worth under US$1 that could be sold for SOL through Jupiter; and NFTs whose burn would return their rent. Selling and burning are never suggested by default: they're the owner's call. Read-only; returns a link where the owner can do it.",
     inputSchema: ADDRESS,
     annotations: { readOnlyHint: true, openWorldHint: true },
   },
@@ -89,8 +89,28 @@ function finding(f: Finding) {
   return { severity: f.severity, title: f.title, detail: f.detail, fixable_on_sealguard: Boolean(f.action), ...(f.keep ? { note: f.keep } : {}) };
 }
 
+/** Sales and NFT burns, with what each would bring back (rent, plus the estimated sale for small balances). */
+const optional = (r: ScanResult, check: "dust" | "nftRent") => r.findings.filter((f) => f.check === check && f.action);
+const lamportsBack = (fs: Finding[]) => fs.reduce((s, f) => s + (f.action ? rentOf(f.action) : 0), 0);
+
+/** Everything the wallet could take back, by kind (before SealGuard's fee). */
+function takeBack(r: ScanResult) {
+  const pumps = r.findings.filter((f) => f.check === "pumpDeposit" && f.action);
+  const pumpLamports = pumps.reduce((s, f) => s + (f.action?.kind === "closePump" ? f.action.lamports : 0), 0);
+  const dust = optional(r, "dust"), nfts = optional(r, "nftRent");
+  const total = r.reclaim.lamports + pumpLamports + lamportsBack(dust) + lamportsBack(nfts);
+  return {
+    empty_token_accounts: { count: r.reclaim.accounts, sol: sol(r.reclaim.lamports) },
+    pump_deposits: { count: pumps.length, sol: sol(pumpLamports) },
+    small_balances: { count: dust.length, about_sol: sol(lamportsBack(dust)), suggested: false },
+    nfts_to_burn: { count: nfts.length, about_sol: sol(lamportsBack(nfts)), suggested: false },
+    total_about_sol: sol(total),
+    total_about_usd: usd(total, r.solPriceUsd),
+  };
+}
+
 export function scanSummary(wallet: string, r: ScanResult) {
-  const risks = r.findings.filter((f) => f.check !== "empty");
+  const risks = r.findings.filter((f) => f.check !== "empty" && f.check !== "dust" && f.check !== "nftRent");
   return {
     wallet,
     score: r.score,
@@ -98,6 +118,7 @@ export function scanSummary(wallet: string, r: ScanResult) {
     findings: risks.slice(0, 50).map(finding),
     ...(risks.length > 50 ? { more_findings: risks.length - 50 } : {}),
     empty_token_accounts: { count: r.reclaim.accounts, rent_sol: sol(r.reclaim.lamports), rent_usd: usd(r.reclaim.lamports, r.solPriceUsd) },
+    take_back: takeBack(r),
     checked: r.checked,
     open_in_sealguard: fixLink(wallet),
     note: NOTE,
@@ -118,7 +139,10 @@ export function emptyAccounts(wallet: string, r: ScanResult) {
     accounts: empty.slice(0, 100).map((f) => ({ title: f.title, account: f.accounts[0], mint: f.accounts[1], rent_sol: sol(lamportsOf(f)), suggested: !f.keep, ...(f.keep ? { keep_reason: f.keep } : {}) })),
     ...(empty.length > 100 ? { more_accounts: empty.length - 100 } : {}),
     pump_fun_deposits: r.findings.filter((f) => f.check === "pumpDeposit").map((f) => ({ title: f.title, account: f.accounts[0], sol: f.action?.kind === "closePump" ? sol(f.action.lamports) : null, can_close_now: Boolean(f.action), detail: f.detail })),
-    fee: `Closing through SealGuard costs ${CLOSE_FEE_BPS / 100}% of the rent returned (${sol(fee)} SOL on the suggested ones), paid in the same transaction; wallets with the SealGuard guard pay no fee.`,
+    small_balances: optional(r, "dust").slice(0, 100).map((f) => ({ title: f.title, account: f.accounts[0], mint: f.accounts[1], about_sol: sol(rentOf(f.action!)), suggested: false, ...(f.keep ? { note: f.keep } : {}) })),
+    nfts_to_burn: optional(r, "nftRent").slice(0, 100).map((f) => ({ title: f.title, account: f.accounts[0], mint: f.accounts[1], about_sol: sol(rentOf(f.action!)), suggested: false, ...(f.keep ? { note: f.keep } : {}) })),
+    take_back: takeBack(r),
+    fee: `Closing, selling and burning through SealGuard cost ${CLOSE_FEE_BPS / 100}% of the SOL returned (${sol(fee)} SOL on the suggested closes), paid in the same transaction; wallets with the SealGuard guard pay no fee.`,
     close_on_sealguard: `${ORIGIN}/?address=${wallet}`,
     note: NOTE,
   };

@@ -69,7 +69,7 @@ describe("MCP server", () => {
     expect(r.count).toBe(3);
     expect(r.suggested.count).toBe(2);
     expect(r.accounts.find((a: any) => a.account === "e3")).toMatchObject({ suggested: false });
-    expect(r.fee).toMatch(/5% of the rent/);
+    expect(r.fee).toMatch(/5% of the SOL returned/);
   });
 
   it("lists approvals as revocable", async () => {
