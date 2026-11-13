@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.2cstudiodev-web/sealguard",
   "title": "SealGuard",
-  "description": "Check a Solana wallet for risky approvals and scam tokens, and find SOL you can take back.",
+  "description": "Check Solana wallets and transactions for risky approvals and scam tokens; find SOL to take back.",
   "version": "1.1.0",
   "websiteUrl": "https://guard.2cstudio.app/docs/mcp",
   "repository": {
