@@ -148,7 +148,7 @@ export async function handleApi(request: Request, env: GuardEnv, path: string, n
       const scanned = kind === "scan" ? validWallet(b.address) : null;
       if (scanned) {
         await logScan(env.DB, {
-          at: now, address: scanned, via: SCAN_VIA.includes(b.via) && b.via !== "mcp" ? (b.via as ScanVia) : "paste",
+          at: now, address: scanned, via: SCAN_VIA.includes(b.via) && b.via !== "mcp" && b.via !== "api" ? (b.via as ScanVia) : "paste",
           score: Number.isInteger(b.score) && b.score >= 0 && b.score <= 100 ? b.score : null,
           critical: num(b.critical, 10_000), high: num(b.high, 10_000), medium: num(b.medium, 10_000), low: num(b.low, 10_000),
           reclaimAccounts: num(b.reclaimAccounts, 100_000), reclaimLamports: num(b.reclaimLamports, 1e13),

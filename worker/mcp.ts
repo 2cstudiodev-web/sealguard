@@ -87,12 +87,12 @@ class RpcError extends Error {
   constructor(readonly code: number, message: string) { super(message); }
 }
 /** Problems the AI can explain to the user (bad address, limit reached): returned as tool results with isError. */
-class ToolError extends Error {}
+export class ToolError extends Error {}
 
 const sol = (lamports: number) => Number((lamports / 1e9).toFixed(9));
 const usd = (lamports: number, price: number | null) => (price ? Number(((lamports / 1e9) * price).toFixed(2)) : null);
 
-function checkAddress(raw: unknown): string {
+export function checkAddress(raw: unknown): string {
   const s = String(raw ?? "").trim();
   try {
     const pk = new PublicKey(s);
@@ -189,7 +189,8 @@ async function countCall(env: GuardEnv, ip: string, now: number): Promise<void> 
   // Count first and read the new total in the same statement, so parallel calls can't all slip under the limit.
   const mine = await env.DB.prepare("INSERT INTO mcp_usage (hour, ip, n) VALUES (?, ?, 1) ON CONFLICT(hour, ip) DO UPDATE SET n = n + 1 RETURNING n").bind(hour, key).first<{ n: number }>();
   if ((mine?.n ?? 1) > MCP_CALLS_PER_HOUR) throw new ToolError(`SealGuard allows ${MCP_CALLS_PER_HOUR} checks an hour from one connection. Try again later, or open ${ORIGIN} in a browser.`);
-  const all = await env.DB.prepare("SELECT COALESCE(SUM(n), 0) AS n FROM mcp_usage WHERE hour >= ?").bind(day * 24).first<{ n: number }>();
+  // /api/v1 (Apify) rows are keyed "api:…" and have their own daily cap (worker/apiv1.ts).
+  const all = await env.DB.prepare("SELECT COALESCE(SUM(n), 0) AS n FROM mcp_usage WHERE hour >= ? AND ip NOT LIKE 'api:%'").bind(day * 24).first<{ n: number }>();
   if ((all?.n ?? 0) > MCP_CALLS_PER_DAY) throw new ToolError(`SealGuard's AI checks are busy today. Open ${ORIGIN} in a browser instead.`);
 }
 async function ipKey(secret: string, ip: string): Promise<string> {
@@ -198,7 +199,7 @@ async function ipKey(secret: string, ip: string): Promise<string> {
 }
 
 export type Scanner = (wallet: string) => Promise<ScanResult>;
-const chainScanner = (env: GuardEnv): Scanner => async (wallet) => scan(await fetchScanInput(rpcOver(env.RPC_URL, 30_000), wallet, () => {}, { activityUpTo: 40 }), { closeFeeBps: CLOSE_FEE_BPS });
+export const chainScanner = (env: GuardEnv): Scanner => async (wallet) => scan(await fetchScanInput(rpcOver(env.RPC_URL, 30_000), wallet, () => {}, { activityUpTo: 40 }), { closeFeeBps: CLOSE_FEE_BPS });
 export type TxChecker = (transaction: unknown, signer: unknown) => Promise<TxCheck>;
 const chainTxChecker = (env: GuardEnv): TxChecker => (transaction, signer) => checkTransaction(rpcOver(env.RPC_URL, 30_000), transaction, signer);
 export type Tools = { scanner: Scanner; txChecker: TxChecker };

@@ -5,8 +5,9 @@ import { allowed, handleApi, pruneOld, runGuards, type GuardEnv } from "./guard"
 import { safeEqualText, webhookSecret } from "./auth";
 import bs58 from "bs58";
 import { handleMcp } from "./mcp";
+import { handleApiV1, type ApiEnv } from "./apiv1";
 
-export interface Env extends GuardEnv {
+export interface Env extends GuardEnv, ApiEnv {
   ASSETS: Fetcher;
   /** Workers Rate Limiting for the /rpc relay (wrangler.jsonc "ratelimits"). */
   RL_RPC?: { limit(o: { key: string }): Promise<{ success: boolean }> };
@@ -86,6 +87,11 @@ export default {
     if (url.pathname === "/mcp") return handleMcp(request, env, now);
     // Where the paid tool sends people for a key: the API key card on the main page (web/src/apikey.ts).
     if (url.pathname === "/mcp-key") return Response.redirect(`${url.origin}/?apikey=1#apikey`, 302);
+    if (url.pathname.startsWith("/api/v1/")) {
+      const r = await handleApiV1(request, env, url.pathname, now);
+      if (r) return r;
+      return json({ error: "not_found" }, 404);
+    }
     if (url.pathname.startsWith("/api/")) {
       const r = await handleApi(request, env, url.pathname, now);
       if (r) return r;

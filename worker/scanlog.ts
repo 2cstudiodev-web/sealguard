@@ -3,8 +3,9 @@
 // Read by 2C Control (monitor.2cstudio.app, behind Cloudflare Access) over a read-only D1 binding.
 import bs58 from "bs58";
 
-export type ScanVia = "connect" | "paste" | "link" | "mcp";
-export const SCAN_VIA: ScanVia[] = ["connect", "paste", "link", "mcp"];
+/** api = /api/v1 (the Apify Actor), worker/apiv1.ts */
+export type ScanVia = "connect" | "paste" | "link" | "mcp" | "api";
+export const SCAN_VIA: ScanVia[] = ["connect", "paste", "link", "mcp", "api"];
 
 export type ScanRow = {
   at: number; address: string; via: ScanVia; score: number | null;
