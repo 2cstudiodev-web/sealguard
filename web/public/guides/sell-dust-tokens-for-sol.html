@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sell dust tokens for SOL, and get the account rent back too · SealGuard</title>
+<meta name="description" content="Tiny token balances worth a few cents each still lock about 0.002 SOL of rent. Sell them for SOL through Jupiter and close the accounts in one go.">
+<link rel="canonical" href="https://guard.2cstudio.app/guides/sell-dust-tokens-for-sol">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Sell dust tokens for SOL, and get the account rent back too">
+<meta property="og:description" content="Tiny token balances worth a few cents each still lock about 0.002 SOL of rent. Sell them for SOL through Jupiter and close the accounts in one go.">
+<meta property="og:url" content="https://guard.2cstudio.app/guides/sell-dust-tokens-for-sol">
+<meta property="og:image" content="https://guard.2cstudio.app/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/logo.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<style>
+  :root{--bg:#050608;--panel:#111419;--line:#22272f;--fg:#f4f6f8;--dim:#9aa3b2;--acc:#14f195;--ink:#04140c}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  main{max-width:760px;margin:0 auto;padding:0 18px 48px}
+  .top{display:flex;justify-content:space-between;align-items:center;max-width:760px;margin:0 auto;padding:16px 18px;font-size:14px}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:800;font-size:18px;color:var(--fg);text-decoration:none}
+  a{color:var(--acc)}
+  h1{font-size:32px;line-height:1.2;margin:18px 0 12px}
+  h2{font-size:20px;margin:34px 0 10px}
+  h3{font-size:16px;margin:18px 0 4px}
+  p,li{color:var(--dim)}
+  p{margin:0 0 12px}
+  ul,ol{padding-left:22px;margin:0 0 12px}
+  li{margin:0 0 6px}
+  b,strong{color:var(--fg)}
+  code{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:14px;color:var(--fg);word-break:break-word}
+  .lead{font-size:18px}
+  .cta{background:var(--panel);border:1px solid var(--acc);border-radius:16px;padding:18px 20px;margin:22px 0}
+  .cta p{margin:8px 0 0;font-size:14px}
+  .btn{display:inline-block;background:var(--acc);color:var(--ink);font-weight:700;text-decoration:none;border-radius:10px;padding:11px 20px}
+  .muted{color:var(--dim);font-size:14px}
+  footer{max-width:760px;margin:20px auto 0;padding:18px;border-top:1px solid var(--line);font-size:13px;color:var(--dim);text-align:center}
+  footer a{margin:0 8px}
+  .tbl{overflow-x:auto;margin:0 0 12px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--dim)}
+  th{color:var(--fg);font-weight:700}
+  td:first-child{color:var(--fg)}
+  .note{font-size:13px}
+</style>
+<script type="application/ld+json">
+{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Is the price fair?", "acceptedAnswer": {"@type": "Answer", "text": "SealGuard doesn't set it. Jupiter routes the swap across Solana exchanges, and the price is the one at the moment you sign, within the limit your wallet shows."}}, {"@type": "Question", "name": "Can I do it for free?", "acceptedAnswer": {"@type": "Answer", "text": "Yes: swap each token to SOL in Jupiter or your wallet, then close the empty account (see closing empty token accounts)."}}, {"@type": "Question", "name": "What about taxes?", "acceptedAnswer": {"@type": "Answer", "text": "A sale can be a taxable event where you live. That's your responsibility."}}]}
+</script>
+<script src="https://pulse.2cstudio.app/v1/web.js" data-site="web-sealguard" defer></script>
+</head>
+<body>
+<header class="top"><a class="brand" href="/"><img src="/mark.svg" alt="" width="28" height="28"> SealGuard</a><span class="muted">by <a href="https://2cstudio.app">2C Studio</a></span></header>
+<main>
+<h1>Sell dust tokens for SOL, and get the account rent back too</h1>
+<p class="lead">Every token you hold sits in its own token account, and every token account holds rent. A balance worth a few cents keeps that rent locked. Selling the dust for SOL and closing the account gets both back, and the rent is usually the bigger part.</p>
+
+<div class="cta">
+  <a class="btn" href="/">Check my wallet for dust</a>
+  <p>Free scan. Nothing is sent until you approve it in your wallet.</p>
+</div>
+
+<h2>How much it's worth</h2>
+<p>Accounts opened before September 2026 hold about 0.002 SOL of rent each; newer ones about 0.0015 SOL, after Solana lowered rent. A token worth US$0.05 in such an account is really worth about US$0.05 plus the rent.</p>
+<p>In one test wallet, five balances worth about US$0.20 together returned about 0.012 SOL, almost all of it rent.</p>
+
+<h2>How SealGuard does it</h2>
+<ul>
+  <li><b>What it lists:</b> balances worth under US$1 at the current market price.</li>
+  <li><b>What it leaves out:</b> frozen tokens, tokens with a transfer hook or that can't be transferred, NFTs, wrapped SOL, and accounts someone else can close.</li>
+  <li><b>Nothing is ticked for you.</b> Selling is your call; tick only the tokens you don't want to keep.</li>
+  <li><b>One transaction per token:</b> a Jupiter swap to SOL, then the close of the emptied account. Your wallet shows each one before you sign.</li>
+  <li><b>If Jupiter can't find a buyer</b> for a token right now, that one is skipped and nothing is sent for it.</li>
+</ul>
+<p><b>Fee:</b> 5% of what comes back (the least SOL the swap may return, plus the rent), paid in the same transaction. Wallets with the guard (US$49 a year) pay no fee.</p>
+
+<h2>Questions</h2>
+<h3>Is the price fair?</h3>
+<p>SealGuard doesn't set it. Jupiter routes the swap across Solana exchanges, and the price is the one at the moment you sign, within the limit your wallet shows.</p>
+<h3>Can I do it for free?</h3>
+<p>Yes: swap each token to SOL in Jupiter or your wallet, then close the empty account (see <a href="/guides/close-empty-token-accounts">closing empty token accounts</a>).</p>
+<h3>What about taxes?</h3>
+<p>A sale can be a taxable event where you live. That's your responsibility.</p>
+</main>
+<footer><a href="/">SealGuard</a><a href="/guides/close-empty-token-accounts">Close empty accounts</a><a href="/guides/revoke-token-approvals">Revoke token approvals</a><a href="/guides/claim-sol-scam-check">Is that &quot;claim your SOL&quot; site a scam?</a><a href="/guides/sol-incinerator-alternative">Sol Incinerator alternative</a><a href="/guides/solana-wallet-drained">Solana wallet drained?</a><a href="/guides/pump-fun-sol-back">Get your SOL back from pump.fun</a><a href="/guides/solana-scam-token-check">Is this Solana token a scam?</a><a href="/guides/permanent-delegate">Token-2022 permanent delegate</a><a href="/guides/sell-dust-tokens-for-sol">Sell dust tokens for SOL</a><a href="/guides/burn-nfts-for-sol">Burn NFTs for SOL</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a></footer>
+</body>
+</html>
