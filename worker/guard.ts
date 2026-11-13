@@ -102,6 +102,9 @@ function status(env: GuardEnv, g: GuardRow | null, now: number) {
   };
 }
 
+/** The steps of a fix the page reports, in order (see main.ts reportStep). */
+export const FIX_STEPS = ["tick", "fix_press", "upsell_shown", "upsell_skip", "upsell_pay", "wallet_ask", "wallet_fail", "sent", "none_sent", "error"];
+
 /** Routes under /api/. Returns null for paths it doesn't own. */
 export async function handleApi(request: Request, env: GuardEnv, path: string, now: number): Promise<Response | null> {
   try {
@@ -114,6 +117,23 @@ export async function handleApi(request: Request, env: GuardEnv, path: string, n
       // Over the limit: quietly not counted (the page never shows this call's answer).
       if (!(await allowed(env.RL_API, callerKey(request)))) return json({ ok: true });
       const b = await readJson(request);
+      // Steps of the fix flow (counted per day, "step:<name>[:app]") and the errors fixes run into (no address).
+      if (b.kind === "step" || b.kind === "fixerr") {
+        if (ownDevice(request) || (await ownWallet(env.DB, validWallet(b.address)))) return json({ ok: true });
+        const app = b.app === true;
+        if (b.kind === "step") {
+          if (!FIX_STEPS.includes(b.name)) throw new ApiError(400, "bad_step");
+          await env.DB.prepare("INSERT INTO daily_stats (day, kind, n, closes, lamports, fee) VALUES (?, ?, 1, 0, 0, 0) ON CONFLICT(day, kind) DO UPDATE SET n = n + 1")
+            .bind(new Date(now).toISOString().slice(0, 10), `step:${b.name}${app ? ":app" : ""}`).run();
+        } else {
+          const place = typeof b.place === "string" ? b.place.replace(/[^a-z_]/g, "").slice(0, 20) : "";
+          const message = typeof b.message === "string" ? b.message.replace(/[1-9A-HJ-NP-Za-km-z]{32,}/g, "…").slice(0, 300) : "";
+          if (!place || !message) throw new ApiError(400, "bad_error");
+          await env.DB.prepare("INSERT INTO fix_errors (at, app, place, message) VALUES (?, ?, ?, ?)").bind(now, app ? 1 : 0, place, message).run();
+          await env.DB.prepare("DELETE FROM fix_errors WHERE id <= (SELECT id FROM fix_errors ORDER BY id DESC LIMIT 1 OFFSET 500)").run();
+        }
+        return json({ ok: true });
+      }
       const kind = b.kind === "scan" || b.kind === "fix" ? b.kind : null;
       if (!kind) throw new ApiError(400, "bad_stat");
       const num = (v: unknown, max: number) => (Number.isInteger(v) && (v as number) >= 0 && (v as number) <= max ? (v as number) : 0);

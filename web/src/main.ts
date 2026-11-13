@@ -7,7 +7,7 @@ import { fetchScanInput, rpc } from "./rpc";
 import { CLOSE_FEE_BPS, closeFee, rentOf, scan, shortKey, solWithUsd, type Action, type Finding, type ScanInput, type ScanResult, type Severity } from "./scan";
 import { buildTransaction, describeAction, describeFee, groupFee, packActions, TXS_PER_APPROVAL } from "./tx";
 import { buildDustTx, JUPITER_GAP_MS } from "./dust";
-import { connect, connectSilently, disconnect, listWallets, onWalletsChange, registerMobile, signAndSendMany, type Connected } from "./wallet";
+import { connect, connectSilently, disconnect, inApp, listWallets, onWalletsChange, registerMobile, signAndSendMany, type Connected } from "./wallet";
 import { buyGuard, forgetGuardSession, guardOffered, guardPriceUsd, isGuardMember, onGuardChange, setGuardWallet } from "./guard";
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector(sel) as T;
@@ -194,6 +194,7 @@ async function doScan(): Promise<void> {
     if (seq !== scanSeq || scanned !== address) return;
     lastInput = input;
     result = scan(input, { closeFeeBps: feeBps() });
+    tickReported = false;
     void reportStat("scan", {
       address, via: connected ? "connect" : scanVia, score: result.score,
       critical: result.counts.critical ?? 0, high: result.counts.high ?? 0, medium: result.counts.medium ?? 0, low: result.counts.low ?? 0,
@@ -261,6 +262,7 @@ function renderReport(): void {
   list.querySelectorAll<HTMLInputElement>("input[type=checkbox]").forEach((cb) => cb.addEventListener("change", () => {
     const idx = String(cb.dataset.i).split(",").map(Number);
     for (const i of idx) { if (cb.checked) selected.add(i); else selected.delete(i); }
+    if (cb.checked && !tickReported) { tickReported = true; reportStep("tick"); }
     restoreChecks();
     renderFixBar();
   }));
@@ -516,6 +518,7 @@ function syncFixButton(): void {
 // fee would be, then "Pay" (goes to the guard card) or "No thanks" (carries on with the fix).
 let upsellShown = false;
 function onFixClick(): void {
+  reportStep("fix_press");
   if (!upsellShown && connected && result && !isGuardMember() && guardOffered()) {
     upsellShown = true;
     openUpsell();
@@ -524,6 +527,7 @@ function onFixClick(): void {
   void doFix();
 }
 function openUpsell(): void {
+  reportStep("upsell_shown");
   const acts = [...selected].map((i) => result!.findings[i].action!).filter(Boolean);
   const closing = acts.reduce((sum, a) => sum + rentOf(a), 0);
   const fee = closeFee(closing, CLOSE_FEE_BPS);
@@ -555,7 +559,12 @@ async function doFix(): Promise<void> {
   const balance = async () => { try { return Number((await rpc<any>("getBalance", [connected!.address, { commitment: "confirmed" }])).value); } catch { return null; } };
   const before = await balance();
   $("#fixbtn").toggleAttribute("disabled", true);
-  let sent = 0, failed = 0, closes = 0, closeLamports = 0, feeLamports = 0, stopped = false;
+  let sent = 0, failed = 0, closes = 0, closeLamports = 0, feeLamports = 0, stopped = false, asked = false, failNoted = false;
+  /** One "wallet_fail" step and one error text per fix, from the first transaction the wallet didn't send. */
+  const noteFailures = (results: { ok: boolean; error?: string }[]) => {
+    const bad = results.find((x) => !x.ok);
+    if (bad && !failNoted) { failNoted = true; reportStep("wallet_fail"); reportFixError("wallet", bad.error); }
+  };
   try {
     for (let r = 0; r < rounds; r++) {
       const chunk = groups.slice(r * TXS_PER_APPROVAL, (r + 1) * TXS_PER_APPROVAL);
@@ -588,7 +597,9 @@ async function doFix(): Promise<void> {
       const txs = keep.map(build);
       const label = rounds > 1 ? `Batch ${r + 1} of ${rounds}` : keep.length > 1 ? `${keep.length} transactions` : "Transaction";
       setStatus(`${label}: waiting for your approval in the wallet (${keep.length} transaction${keep.length === 1 ? "" : "s"})…`, "busy");
+      if (!asked) { asked = true; reportStep("wallet_ask"); }
       const results = await signAndSendMany(connected, txs, async (raw) => rpc<string>("sendTransaction", [Buffer.from(raw).toString("base64"), { encoding: "base64", preflightCommitment: "confirmed" }]));
+      noteFailures(results);
       results.forEach((res, k) => {
         const g = keep[k];
         if (res.ok) {
@@ -636,7 +647,9 @@ async function doFix(): Promise<void> {
       for (let r = 0; r < ready.length && !stopped; r += TXS_PER_APPROVAL) {
         const chunk = ready.slice(r, r + TXS_PER_APPROVAL);
         setStatus(`Waiting for your approval in the wallet (${chunk.length} transaction${chunk.length === 1 ? "" : "s"})…`, "busy");
+        if (!asked) { asked = true; reportStep("wallet_ask"); }
         const results = await signAndSendMany(connected, chunk.map((x) => x.tx), async (raw) => rpc<string>("sendTransaction", [Buffer.from(raw).toString("base64"), { encoding: "base64", preflightCommitment: "confirmed" }]));
+        noteFailures(results);
         results.forEach((res, k) => {
           const x = chunk[k];
           if (res.ok) {
@@ -652,6 +665,7 @@ async function doFix(): Promise<void> {
       }
     }
     void reportStat("fix", { closes, lamports: closeLamports, fee: feeLamports, address });
+    reportStep(sent ? "sent" : "none_sent");
     setStatus(failed ? `${sent} sent, ${failed} not sent. Rescanning…` : "Done. Rescanning…", failed ? "err" : "busy");
     await new Promise((r) => setTimeout(r, 2500));
     const logged = log.innerHTML;
@@ -665,6 +679,8 @@ async function doFix(): Promise<void> {
     fixResultFor = address;
     $("#fixresult").hidden = !sent && !failed;
   } catch (e: any) {
+    reportStep("error");
+    reportFixError("fix", e);
     setStatus(e?.message || "Something went wrong; nothing more was sent.", "err");
   } finally {
     syncFixButton();
@@ -676,7 +692,21 @@ async function doFix(): Promise<void> {
  * it was scanned and the result, kept as a scan record (privacy notice, "Scanning"). A fix sends the wallet only so
  * 2C Studio's own wallets can be left out; it isn't stored.
  */
-async function reportStat(kind: "scan" | "fix", data: Record<string, unknown> = {}): Promise<void> {
+/**
+ * Where people stop in a fix: a counter per step (no address stored; it's sent only so 2C Studio's own wallets are
+ * left out). Errors go with their text, wallet addresses removed on the server.
+ */
+function reportStep(name: string): void {
+  void reportStat("step", { name, app: inApp(), address });
+}
+function reportFixError(place: string, e: unknown): void {
+  const message = String((e as any)?.message ?? e ?? "").slice(0, 300);
+  if (message) void reportStat("fixerr", { place, message, app: inApp(), address });
+}
+/** "tick" is counted once per scan result. */
+let tickReported = false;
+
+async function reportStat(kind: "scan" | "fix" | "step" | "fixerr", data: Record<string, unknown> = {}): Promise<void> {
   try { await fetch("/api/stat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind, ...data }), keepalive: true }); } catch { /* best effort */ }
 }
 
@@ -728,8 +758,8 @@ document.addEventListener("click", (e) => { if (!$("#navmenu").hidden && !(e.tar
 $("#fixbtn").addEventListener("click", onFixClick);
 $("#upclose").addEventListener("click", closeUpsell);
 $("#upsell").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeUpsell(); });
-$("#upskip").addEventListener("click", () => { closeUpsell(); void doFix(); });
-$("#uppay").addEventListener("click", () => { closeUpsell(); void buyGuard(); });
+$("#upskip").addEventListener("click", () => { reportStep("upsell_skip"); closeUpsell(); void doFix(); });
+$("#uppay").addEventListener("click", () => { reportStep("upsell_pay"); closeUpsell(); void buyGuard(); });
 // A member whose sign-in on this browser has lapsed (7 days, another device) signs in again; buyGuard only opens
 // the payment choices when the guard isn't active, and the fee drops once membership is known.
 $("#upsignin").addEventListener("click", () => { closeUpsell(); void buyGuard(); });

@@ -31,7 +31,7 @@ export function registerMobile(): void {
 }
 
 /** True inside the SealGuard Android app (it adds "SealGuardApp" to the user agent and opens with ?app=android). */
-function inApp(): boolean {
+export function inApp(): boolean {
   return /SealGuardApp/.test(navigator.userAgent) || new URLSearchParams(location.search).get("app") === "android";
 }
 
