@@ -4,7 +4,7 @@ import { PublicKey } from "@solana/web3.js";
 import { looksSecret } from "./secret";
 import { shareScore } from "./share";
 import { fetchScanInput, rpc } from "./rpc";
-import { CLOSE_FEE_BPS, closeFee, rentOf, scan, shortKey, solWithUsd, type Action, type Finding, type ScanInput, type ScanResult, type Severity } from "./scan";
+import { CLOSE_FEE_BPS, closeFee, hardwareCardReason, holdingsUsd, rentOf, scan, shortKey, solWithUsd, type Action, type Finding, type ScanInput, type ScanResult, type Severity } from "./scan";
 import { buildTransaction, describeAction, describeFee, groupFee, packActions, TXS_PER_APPROVAL } from "./tx";
 import { buildDustTx, JUPITER_GAP_MS } from "./dust";
 import { connect, connectSilently, disconnect, inApp, listWallets, onWalletsChange, registerMobile, signAndSendMany, type Connected } from "./wallet";
@@ -195,6 +195,7 @@ async function doScan(): Promise<void> {
     lastInput = input;
     result = scan(input, { closeFeeBps: feeBps() });
     tickReported = false;
+    hwReported = false;
     void reportStat("scan", {
       address, via: connected ? "connect" : scanVia, score: result.score,
       critical: result.counts.critical ?? 0, high: result.counts.high ?? 0, medium: result.counts.medium ?? 0, low: result.counts.low ?? 0,
@@ -273,8 +274,31 @@ function renderReport(): void {
     b.textContent = ul.hidden ? b.dataset.show! : "Hide the list";
   }));
   renderFixBar();
+  renderHardwareCard();
   renderHeroCard();
 }
+
+/** "hw_shown" is counted once per scan result. */
+let hwReported = false;
+/**
+ * The hardware-wallet card under the report: only when the scan found something critical or high, or the wallet
+ * holds about US$1,000 or more. Small, clean wallets don't see it, so it doesn't read as an ad.
+ */
+function renderHardwareCard(): void {
+  const box = $("#hwcard");
+  const r = result;
+  const usd = lastInput ? holdingsUsd(lastInput) : null;
+  const why = r ? hardwareCardReason(r, usd) : null;
+  box.hidden = !why;
+  if (!r || !why) return;
+  const serious = (r.counts.critical ?? 0) + (r.counts.high ?? 0);
+  $("#hwwhy").textContent = why === "risk"
+    ? `This wallet had ${serious} serious finding${serious > 1 ? "s" : ""}. Fixing them closes those doors, but most Solana thefts are one signature on a phishing site, not a standing approval.`
+    : `This wallet holds about US$${Math.round(usd!).toLocaleString("en-US")}. Most Solana thefts are one signature on a phishing site, and a wallet on your phone or browser can't refuse it once you've approved.`;
+  if (!hwReported) { hwReported = true; reportStep("hw_shown"); }
+}
+$("#hw-ledger").addEventListener("click", () => reportStep("hw_ledger"));
+$("#hw-trezor").addEventListener("click", () => reportStep("hw_trezor"));
 
 // ---------- the card beside the headline: an example until a wallet is scanned, then that wallet's own report ----------
 const HERO_EXAMPLE = $(".herocard").innerHTML;

@@ -103,7 +103,9 @@ function status(env: GuardEnv, g: GuardRow | null, now: number) {
 }
 
 /** The steps of a fix the page reports, in order (see main.ts reportStep). */
-export const FIX_STEPS = ["tick", "fix_press", "upsell_shown", "upsell_skip", "upsell_pay", "wallet_ask", "wallet_fail", "sent", "none_sent", "error"];
+export const FIX_STEPS = ["tick", "fix_press", "upsell_shown", "upsell_skip", "upsell_pay", "wallet_ask", "wallet_fail", "sent", "none_sent", "error",
+  // The hardware-wallet card under the report: shown, and which maker's link was opened.
+  "hw_shown", "hw_ledger", "hw_trezor"];
 
 /** Routes under /api/. Returns null for paths it doesn't own. */
 export async function handleApi(request: Request, env: GuardEnv, path: string, now: number): Promise<Response | null> {

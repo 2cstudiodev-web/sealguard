@@ -210,6 +210,7 @@ export async function fetchScanInput(rpc: RpcCall, wallet: string, onProgress: P
   onProgress("Reading the wallet account");
   const acct = await rpc<any>("getAccountInfo", [wallet, { encoding: "base64" }]);
   const walletOwner: string = acct?.value?.owner ?? SYSTEM_PROGRAM_ID;
+  const walletLamports: number | undefined = typeof acct?.value?.lamports === "number" ? acct.value.lamports : undefined;
 
   onProgress("Listing token accounts");
   const [t1, t2] = await Promise.all([
@@ -344,5 +345,5 @@ export async function fetchScanInput(rpc: RpcCall, wallet: string, onProgress: P
 
   let nfts: NftRent[] = [];
   try { nfts = await nftRents(rpc, tokenAccounts, nftRaw, onProgress); } catch { warnings.push("NFTs that hold rent couldn't be read this time."); }
-  return { wallet, walletOwner, tokenAccounts, mints, assets, stakes, nonces, warnings, solPriceUsd, pump, nfts };
+  return { wallet, walletOwner, walletLamports, tokenAccounts, mints, assets, stakes, nonces, warnings, solPriceUsd, pump, nfts };
 }

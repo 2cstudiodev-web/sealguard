@@ -74,6 +74,8 @@ export type ScanInput = {
   wallet: string;
   /** Owner program of the wallet account itself; anything but the System Program means the wallet is lost. */
   walletOwner: string;
+  /** SOL in the wallet account itself, in lamports; undefined when the RPC didn't say. */
+  walletLamports?: number;
   tokenAccounts: TokenAcct[];
   mints: Record<string, MintInfo>;
   assets: Record<string, AssetMeta>;
@@ -203,6 +205,38 @@ export function scorePenalty(findings: Finding[]): number {
     total += Math.min(base * 2, base * (1 + 0.25 * (g.n - 1)));
   }
   return total;
+}
+
+/**
+ * Rough US$ value of what the wallet holds: its own SOL, staked SOL and every token the price feed knows.
+ * Only used to decide whether to suggest a hardware wallet, so a rough figure is enough. null without a SOL price.
+ */
+export function holdingsUsd(input: ScanInput): number | null {
+  const sol = input.solPriceUsd;
+  if (!sol || sol <= 0) return null;
+  let lamports = input.walletLamports ?? 0;
+  for (const s of input.stakes) lamports += s.lamports;
+  let usd = (lamports / 1e9) * sol;
+  for (const t of input.tokenAccounts) {
+    if (t.amount === 0n || t.frozen) continue;
+    const p = input.assets[t.mint]?.priceUsd;
+    if (!p || p <= 0) continue;
+    usd += (Number(t.amount) / 10 ** t.decimals) * p;
+  }
+  return usd;
+}
+
+/** From this rough value up, the report suggests keeping the big amounts on a hardware wallet. */
+export const HARDWARE_CARD_MIN_USD = 1000;
+
+/**
+ * Why the report shows the hardware-wallet card: "risk" when the scan found something critical or high,
+ * "value" when the wallet holds HARDWARE_CARD_MIN_USD or more, null to leave it out (it should not read as an ad).
+ */
+export function hardwareCardReason(r: Pick<ScanResult, "counts">, usd: number | null): "risk" | "value" | null {
+  if ((r.counts.critical ?? 0) + (r.counts.high ?? 0) > 0) return "risk";
+  if (usd !== null && usd >= HARDWARE_CARD_MIN_USD) return "value";
+  return null;
 }
 
 /** The rent deposit of a 165-byte token account opened before Solana lowered rent (SIMD-0437, Sept 2026); newer ones hold about 0.0015 SOL. Only a fallback: the real balance is read from the chain. */

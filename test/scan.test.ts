@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { looksLikePhishing, scan, SYSTEM_PROGRAM, type AssetMeta, type ScanInput, type TokenAcct } from "../web/src/scan";
+import { hardwareCardReason, holdingsUsd, looksLikePhishing, scan, SYSTEM_PROGRAM, type AssetMeta, type ScanInput, type TokenAcct } from "../web/src/scan";
 
 const W = "7Lk1W1R8rz8ZYzvYc7Yx7oqk9kV1uC2Q7u7eQ2Q6n2Qe";
 const OTHER = "9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin";
@@ -121,5 +121,37 @@ describe("scan", () => {
     expect(r.score).toBe(0);
     expect(r.counts.high).toBe(6);
     expect(r.findings[0].severity).toBe("critical");
+  });
+});
+
+describe("hardware wallet card", () => {
+  const counts = (p: Partial<Record<"critical" | "high" | "medium" | "low" | "ok", number>>) =>
+    ({ counts: { critical: 0, high: 0, medium: 0, low: 0, ok: 0, ...p } });
+
+  it("adds wallet SOL, staked SOL and priced tokens", () => {
+    const usd = holdingsUsd(input({
+      solPriceUsd: 100,
+      walletLamports: 2_000_000_000,
+      stakes: [{ address: "s", staker: W, withdrawer: W, lamports: 1_000_000_000 }],
+      tokenAccounts: [
+        acct({ mint: "usdc", amount: 50_000_000n, decimals: 6 }),
+        acct({ mint: "nopr", amount: 9_000_000n, decimals: 6 }),
+        acct({ mint: "frz", amount: 1_000_000n, decimals: 6, frozen: true }),
+      ],
+      assets: { usdc: asset({ mint: "usdc", priced: true, priceUsd: 1 }), frz: asset({ mint: "frz", priced: true, priceUsd: 1000 }) },
+    }));
+    expect(usd).toBeCloseTo(350);
+  });
+
+  it("has no value without a SOL price", () => {
+    expect(holdingsUsd(input({ walletLamports: 5_000_000_000 }))).toBeNull();
+  });
+
+  it("shows for serious findings, for big wallets, and not for small clean ones", () => {
+    expect(hardwareCardReason(counts({ high: 1 }), 10)).toBe("risk");
+    expect(hardwareCardReason(counts({ critical: 1 }), null)).toBe("risk");
+    expect(hardwareCardReason(counts({ medium: 3 }), 1000)).toBe("value");
+    expect(hardwareCardReason(counts({ medium: 3, low: 2 }), 999)).toBeNull();
+    expect(hardwareCardReason(counts({}), null)).toBeNull();
   });
 });
