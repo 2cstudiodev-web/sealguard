@@ -155,6 +155,16 @@ export async function handleApi(request: Request, env: GuardEnv, path: string, n
       return json({ ok: true });
     }
 
+    // Whether a wallet's guard is active, without signing in: a member who only connected still closes with no fee.
+    // It says yes or no, nothing else (the fee waiver is decided in the page anyway; see the security notes).
+    if (path === "/api/guard/member" && method === "GET") {
+      if (!(await allowed(env.RL_API, callerKey(request)))) throw new ApiError(429, "slow_down", "Too many requests");
+      const w = new URL(request.url).searchParams.get("wallet");
+      if (!isWallet(w)) throw new ApiError(400, "bad_wallet");
+      const g = await guardRow(env, w);
+      return json({ active: Boolean(g?.paid_until && g.paid_until > now) });
+    }
+
     if ((path === "/api/auth/nonce" || path === "/api/auth/verify" || path === "/api/guard/quote") && method === "POST" && !(await allowed(env.RL_API, callerKey(request)))) {
       throw new ApiError(429, "slow_down", "Too many requests");
     }

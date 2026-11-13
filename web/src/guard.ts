@@ -23,10 +23,16 @@ let pollTimer: number | null = null;
 let guardAvailable: boolean | null = null;
 const listeners: (() => void)[] = [];
 let lastMember = false;
+/** The connected wallet, when the server says its guard is active (looked up on connect, no sign-in needed). */
+let memberWallet: string | null = null;
 
-/** True when the connected wallet is signed in and its guard is active (members close empty accounts with no fee). */
+/**
+ * True when the connected wallet's guard is active (members close, burn and sell with no fee): either signed in, or
+ * known from the public lookup on connect, so a member who only connected isn't charged.
+ */
 export function isGuardMember(): boolean {
-  return Boolean(connected && token && status?.active && status.wallet === connected.address);
+  if (!connected) return false;
+  return Boolean((token && status?.active && status.wallet === connected.address) || memberWallet === connected.address);
 }
 /** True when this deployment offers the guard to the connected wallet (the card is on screen). */
 export function guardOffered(): boolean {
@@ -48,6 +54,16 @@ export function forgetGuardSession(): void {
   try { localStorage.removeItem(TOKEN_KEY); } catch { /* private mode */ }
   token = null;
   status = null;
+}
+
+async function lookUpMember(wallet: string): Promise<void> {
+  try {
+    const r = await fetch(`/api/guard/member?wallet=${encodeURIComponent(wallet)}`);
+    const j: any = r.ok ? await r.json() : null;
+    if (connected?.address !== wallet) return; // the wallet changed meanwhile
+    memberWallet = j?.active ? wallet : null;
+  } catch { /* unknown: the fee stays until they sign in */ }
+  notifyChange();
 }
 
 /** main.ts re-prices the report when membership changes. */
@@ -91,7 +107,8 @@ export async function setGuardWallet(c: Connected | null): Promise<void> {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   const card = $("#guard");
   hideLinkHelp();
-  if (!c) { card.hidden = true; token = null; status = null; notifyChange(); return; }
+  if (!c) { card.hidden = true; token = null; status = null; memberWallet = null; notifyChange(); return; }
+  void lookUpMember(c.address);
   // The card only makes sense where the guard is configured (session secret set on the Worker).
   if (guardAvailable === null) {
     try { guardAvailable = Boolean(((await (await fetch("/health")).json()) as any)?.guard); } catch { guardAvailable = false; }
