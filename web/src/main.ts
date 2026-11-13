@@ -711,6 +711,13 @@ async function reportStat(kind: "scan" | "fix" | "step" | "fixerr", data: Record
 }
 
 registerMobile();
+// The dApp Store has no web page, only a link its own app opens: offered on Android phones (outside this app);
+// elsewhere the footer just says where to find it.
+{
+  const android = /Android/i.test(navigator.userAgent);
+  $("#dappstore").hidden = !android || inApp();
+  $("#dappfoot").hidden = android;
+}
 // Membership changes the fee on closing empty accounts: re-price the report already on screen.
 onGuardChange(() => {
   if (!lastInput || !connected) return;

@@ -242,3 +242,4 @@ button.hc-b:hover{filter:brightness(1.15)}
 .fixresult{background:var(--panel,#111419);border:1px solid var(--acc);border-radius:14px;padding:12px 16px;margin:14px 0}
 .fixresult p{margin:0 0 6px;font-weight:600}
 .fixresult ul{margin:0;padding-left:18px;color:var(--dim)}
+.dappstore{margin:10px 0 0;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
