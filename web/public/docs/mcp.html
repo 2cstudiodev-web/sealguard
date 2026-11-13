@@ -47,7 +47,7 @@
 <p class="lead">SealGuard's MCP server lets Claude, Cursor, VS Code and other AI apps run the same wallet check as this site. Ask "is this wallet safe?", "which approvals are still open?" or "how much SOL can I get back from empty accounts?" and get an answer from the chain.</p>
 
 <div class="url">Server URL: <code>https://guard.2cstudio.app/mcp</code></div>
-<p>Free, no sign-in and no API key. It's read-only: it never asks for a seed phrase and can't send a transaction. When something needs fixing, the answer includes a link to SealGuard, where the wallet's owner connects their wallet and approves each fix.</p>
+<p>The wallet checks are free, with no sign-in and no API key. Checking a transaction before it's signed (<b>check_transaction</b>) is paid: <a href="#check-transaction">see below</a>. It's all read-only: it never asks for a seed phrase and can't send a transaction. When something needs fixing, the answer includes a link to SealGuard, where the wallet's owner connects their wallet and approves each fix.</p>
 
 <h2>Add it to your AI app</h2>
 <p><b>Claude</b> (claude.ai and the desktop app): Settings → Connectors → Add custom connector, then paste the server URL.</p>
@@ -64,17 +64,36 @@
   <li><b>scan_wallet:</b> a 0–100 safety score and everything found: open token approvals, phishing airdrops, Token-2022 permanent delegates and transfer restrictions, stake and nonce accounts someone else controls, and whether the wallet account itself has been taken over. Also totals the SOL in empty token accounts.</li>
   <li><b>list_empty_token_accounts:</b> each empty token account, the SOL rent in it, and which ones SealGuard suggests closing. Accounts for tokens you'll likely receive again, or used in the last 30 days, are marked to keep, with the reason.</li>
   <li><b>list_token_approvals:</b> every address that can still move tokens out of the wallet, and how much, plus permanent delegates that holders can't revoke.</li>
+  <li><b>check_transaction</b> (paid): before a wallet signs a transaction, SealGuard simulates it and says whether it would hand anything over. See below.</li>
 </ul>
+
+<h2 id="check-transaction">Checking a transaction before it's signed</h2>
+<p>For agents and apps that sign Solana transactions. Pass the serialized transaction (base64; unsigned is fine) and, if it isn't the fee payer, the wallet about to sign. SealGuard simulates it on mainnet and compares that wallet's accounts before and after. It reports:</p>
+<ul>
+  <li>the wallet account handed to another program, a token account given a new owner, a standing approval left on tokens, a new close authority, and stake or nonce authorities moved to someone else;</li>
+  <li>the SOL and token amounts that would leave and arrive, and a warning when things leave and nothing comes back;</li>
+  <li>a durable nonce, which keeps a signed transaction valid long after it was signed, and programs SealGuard doesn't know.</li>
+</ul>
+<p>The answer starts with a verdict: <code>do_not_sign</code>, <code>review</code> or <code>no_red_flags</code>. It can't judge prices, or whether a payment is one you meant to make, and the chain can change between the check and the signature.</p>
+<p><b>Price:</b> US$0.01 a check, bought 500 at a time for US$5 in USDC, SOL or SKR. Wallets with the SealGuard <a href="/#plans">guard</a> get 1,000 checks a month included. A check is taken only when SealGuard returns an answer. Get a key at <a href="/mcp-key">guard.2cstudio.app/mcp-key</a>: connect the wallet that will own it, sign in and buy checks there.</p>
+<p>Send the key as a header. <b>Claude Code:</b></p>
+<pre><code>claude mcp add --transport http sealguard https://guard.2cstudio.app/mcp --header "Authorization: Bearer sgk_…"</code></pre>
+<p><b>Cursor</b> (<code>~/.cursor/mcp.json</code>):</p>
+<pre><code>{ "mcpServers": { "sealguard": { "url": "https://guard.2cstudio.app/mcp", "headers": { "Authorization": "Bearer sgk_…" } } } }</code></pre>
+<p><b>VS Code</b> (<code>.vscode/mcp.json</code>):</p>
+<pre><code>{ "servers": { "sealguard": { "type": "http", "url": "https://guard.2cstudio.app/mcp", "headers": { "Authorization": "Bearer sgk_…" } } } }</code></pre>
+<p>Agents calling the server directly send the same header (or <code>x-api-key: sgk_…</code>) with each request. SealGuard doesn't keep the transactions it checks; it counts checks per key.</p>
 
 <h2>Things to ask</h2>
 <ul>
   <li>"Is wallet &lt;address&gt; safe? Explain anything risky in plain words."</li>
   <li>"How much SOL can I get back from empty token accounts in &lt;address&gt;?"</li>
   <li>"Does &lt;address&gt; have any token approvals I should revoke?"</li>
+  <li>"Before signing, check this transaction with SealGuard: &lt;base64&gt;"</li>
 </ul>
 
 <h2>Limits and privacy</h2>
-<p>Each check reads the wallet from the Solana network, so there are limits: 30 checks an hour from one connection, and a daily total across everyone. SealGuard keeps a record of each check, including the address (see the <a href="/privacy">privacy notice</a>). It also keeps a count of calls per connection, under a one-way hash, for up to two days, for the limit. Results are general information, not financial or security advice: see the <a href="/terms">terms</a>.</p>
+<p>Each free check reads the wallet from the Solana network, so there are limits: 30 checks an hour from one connection, and a daily total across everyone. Paid transaction checks are limited per key to a few dozen a minute. SealGuard keeps a record of each check, including the address (see the <a href="/privacy">privacy notice</a>). It also keeps a count of calls per connection, under a one-way hash, for up to two days, for the limit. Results are general information, not financial or security advice: see the <a href="/terms">terms</a>.</p>
 
 <h2>Fixing what it finds</h2>
 <p>Revoking approvals and burning phishing tokens are free. Closing empty token accounts costs 5% of the SOL returned, paid in the same transaction, and nothing for wallets with the <a href="/#plans">guard</a>. For the step-by-step guides, see <a href="/guides/close-empty-token-accounts">closing empty token accounts</a> and <a href="/guides/revoke-token-approvals">revoking token approvals</a>.</p>

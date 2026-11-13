@@ -15,7 +15,7 @@
   "routes": [
     { "pattern": "guard.2cstudio.app", "custom_domain": true }
   ],
-  "assets": { "directory": "dist", "binding": "ASSETS", "run_worker_first": ["/rpc", "/health", "/api/*", "/mcp"] },
+  "assets": { "directory": "dist", "binding": "ASSETS", "run_worker_first": ["/rpc", "/health", "/api/*", "/mcp", "/mcp-key"] },
   "d1_databases": [
     { "binding": "DB", "database_name": "sealguard", "database_id": "17eb9995-918a-45fd-8736-061ce285d05b", "migrations_dir": "migrations" }
   ],

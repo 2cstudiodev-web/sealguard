@@ -7,6 +7,7 @@ import { bearer, checkSignIn, FRESH_SIGNIN_MS, issueToken, makeNonce, safeEqualT
 import { buildQuotes, extendPaidUntil, GUARD_USD, jupiterPrices, TEST_QUOTES, PAY_SLACK_MS, PAY_TOKENS, QUOTE_TTL_MS, SKR_MINT, verifyPaymentTx, WSOL_MINT, type ParsedTx, type PayToken } from "./pay";
 import { esc, sendTelegram, setWebhook, startCode } from "./telegram";
 import { cleanSource, logScan, ownDevice, ownWallet, SCAN_VIA, validWallet, type ScanVia } from "./scanlog";
+import { account, CHECK_USD, PACK_CHECKS, PACK_USD, revokeKeys, rotateKey } from "./mcpkeys";
 
 export interface GuardEnv {
   DB: D1Database;
@@ -226,47 +227,12 @@ export async function handleApi(request: Request, env: GuardEnv, path: string, n
 
     if (path === "/api/guard/quote" && method === "POST") {
       const wallet = requireWallet(env, request, now);
-      if (!env.TREASURY) throw new ApiError(503, "no_treasury");
-      const testList = (await env.DB.prepare("SELECT v FROM meta WHERE k = 'test_wallets'").first<{ v: string }>())?.v ?? "";
-      const test = testList.split(",").map((x) => x.trim()).includes(wallet);
-      const quotes = test ? TEST_QUOTES : buildQuotes(GUARD_USD, await jupiterPrices([WSOL_MINT, SKR_MINT]));
-      const id = randomCode(16);
-      const memo = `sealguard:guard:${id}`;
-      const expiresAt = now + QUOTE_TTL_MS;
-      await env.DB.batch(quotes.map((q) => env.DB.prepare("INSERT INTO quotes (id, token, wallet, base_units, display, usd, memo, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").bind(id, q.token, wallet, q.baseUnits, q.display, test ? "test" : GUARD_USD.toFixed(2), memo, expiresAt)));
-      return json({ quoteId: id, usd: GUARD_USD.toFixed(2), memo, expiresAt, now, quotes, treasury: env.TREASURY, test });
+      return json(await makeQuote(env, wallet, "guard", GUARD_USD, now));
     }
 
     if (path === "/api/guard/pay" && method === "POST") {
       const wallet = requireWallet(env, request, now);
-      const b = await readJson(request);
-      const token = String(b.token ?? "") as PayToken;
-      const quoteId = String(b.quoteId ?? "");
-      const signature = String(b.signature ?? "");
-      if (!quoteId || !PAY_TOKENS.includes(token) || !/^[1-9A-HJ-NP-Za-km-z]{64,100}$/.test(signature)) throw new ApiError(400, "bad_payment", "payment needs quoteId, token and the transaction signature");
-      if (await env.DB.prepare("SELECT signature FROM payments WHERE signature = ?").bind(signature).first()) throw new ApiError(409, "already_used", "That transaction was already counted");
-      const q = await env.DB.prepare("SELECT * FROM quotes WHERE id = ? AND token = ? AND wallet = ?").bind(quoteId, token, wallet).first<{ base_units: string; memo: string; expires_at: number; used: number; usd: string }>();
-      if (!q) throw new ApiError(400, "bad_quote");
-      if (q.used) throw new ApiError(409, "quote_used");
-      // No request-time expiry: a payment that landed in time counts even if the page comes back late (the
-      // transaction's own block time is checked against the quote below).
-      const rpc = rpcOver(env.RPC_URL, 20_000);
-      let tx: ParsedTx | null = null;
-      try {
-        tx = (await rpc<ParsedTx | null>("getTransaction", [signature, { encoding: "jsonParsed", commitment: "confirmed", maxSupportedTransactionVersion: 1 }])) ?? null;
-      } catch (e: any) {
-        // A malformed signature is the caller's mistake; a provider hiccup is retried by the page.
-        if (/invalid/i.test(String(e?.message))) throw new ApiError(400, "bad_signature", "That isn't a transaction signature");
-        throw new ApiError(503, "chain_busy", "Solana lookups are busy; try again in a few seconds");
-      }
-      const check = verifyPaymentTx(tx, { payer: wallet, treasury: env.TREASURY, token, baseUnits: BigInt(q.base_units), memo: q.memo, paidBy: q.expires_at + PAY_SLACK_MS });
-      if (!check.ok) {
-        if (check.reason === "pending") throw new ApiError(503, "chain_busy", "The payment is still confirming; try again in a few seconds");
-        throw new ApiError(check.reason === "not_found" ? 404 : 400, check.reason);
-      }
-      // Count the transaction by its first signature, whichever of its signatures the page sent.
-      const first = (tx as any)?.transaction?.signatures?.[0];
-      if (typeof first === "string" && first !== signature) throw new ApiError(400, "bad_signature", "Send the transaction's first signature");
+      const { q, quoteId, token, signature, rpc } = await checkPayment(env, wallet, await readJson(request), "guard", now);
       const g = await guardRow(env, wallet);
       const paidUntil = extendPaidUntil(g?.paid_until ?? null, now);
       // The baseline is the wallet as it is right now: the guard reports changes from here on.
@@ -278,6 +244,39 @@ export async function handleApi(request: Request, env: GuardEnv, path: string, n
         env.DB.prepare("UPDATE guards SET activated_at = CASE WHEN paid_until IS NULL OR paid_until < ? THEN ? ELSE activated_at END, paid_until = ?, baseline = COALESCE(?, baseline), last_error = NULL WHERE wallet = ?").bind(now, now, paidUntil, baseline, wallet),
       ]);
       return json({ ok: true, paidUntil });
+    }
+
+    // Paid MCP checks (worker/mcpkeys.ts): the account, its API key, and packs of checks.
+    if (path === "/api/mcp/account" && method === "GET") {
+      const wallet = requireWallet(env, request, now);
+      const g = await guardRow(env, wallet);
+      return json({ ...(await account(env.DB, wallet, isMember(g, now), now)), packChecks: PACK_CHECKS, packUsd: PACK_USD.toFixed(2), checkUsd: CHECK_USD });
+    }
+    if (path === "/api/mcp/key" && method === "POST") {
+      // A new key retires the old one; like Telegram linking, it needs a recent sign-in.
+      const { wallet, token } = await requireFreshWallet(env, request, await readJson(request), now);
+      return json({ ...(await rotateKey(env.DB, env.SESSION_SECRET, wallet, now)), token });
+    }
+    if (path === "/api/mcp/key/revoke" && method === "POST") {
+      const { wallet, token } = await requireFreshWallet(env, request, await readJson(request), now);
+      await revokeKeys(env.DB, wallet, now);
+      return json({ ok: true, token });
+    }
+    if (path === "/api/mcp/quote" && method === "POST") {
+      if (!(await allowed(env.RL_API, callerKey(request)))) throw new ApiError(429, "slow_down", "Too many requests");
+      const wallet = requireWallet(env, request, now);
+      return json(await makeQuote(env, wallet, "mcp", PACK_USD, now));
+    }
+    if (path === "/api/mcp/pay" && method === "POST") {
+      const wallet = requireWallet(env, request, now);
+      const { q, quoteId, token, signature } = await checkPayment(env, wallet, await readJson(request), "mcp", now);
+      await env.DB.batch([
+        env.DB.prepare("UPDATE quotes SET used = 1 WHERE id = ?").bind(quoteId),
+        env.DB.prepare("INSERT INTO mcp_payments (signature, wallet, quote_id, token, base_units, usd, checks, paid_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").bind(signature, wallet, quoteId, token, q.base_units, q.usd, PACK_CHECKS, now),
+        env.DB.prepare("INSERT INTO mcp_credits (wallet, credits) VALUES (?, ?) ON CONFLICT(wallet) DO UPDATE SET credits = credits + excluded.credits").bind(wallet, PACK_CHECKS),
+      ]);
+      const g = await guardRow(env, wallet);
+      return json({ ok: true, ...(await account(env.DB, wallet, isMember(g, now), now)) });
     }
 
     // Telegram → us. The secret header proves it's Telegram; /start <code> links a chat to a wallet.
@@ -309,6 +308,56 @@ export async function handleApi(request: Request, env: GuardEnv, path: string, n
 
 const DAY_MS = 86_400_000;
 const TEST_ALERT_GAP_MS = 60_000;
+
+export const isMember = (g: Pick<GuardRow, "paid_until"> | null, now: number) => Boolean(g?.paid_until && g.paid_until > now);
+
+/** What a quote is for; its memo starts with sealguard:<kind>: and a payment is only counted for that kind. */
+type QuoteKind = "guard" | "mcp";
+
+async function makeQuote(env: GuardEnv, wallet: string, kind: QuoteKind, usd: number, now: number) {
+  if (!env.TREASURY) throw new ApiError(503, "no_treasury");
+  const testList = (await env.DB.prepare("SELECT v FROM meta WHERE k = 'test_wallets'").first<{ v: string }>())?.v ?? "";
+  const test = testList.split(",").map((x) => x.trim()).includes(wallet);
+  const quotes = test ? TEST_QUOTES : buildQuotes(usd, await jupiterPrices([WSOL_MINT, SKR_MINT]));
+  const id = randomCode(16);
+  const memo = `sealguard:${kind}:${id}`;
+  const expiresAt = now + QUOTE_TTL_MS;
+  await env.DB.batch(quotes.map((q) => env.DB.prepare("INSERT INTO quotes (id, token, wallet, base_units, display, usd, memo, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").bind(id, q.token, wallet, q.baseUnits, q.display, test ? "test" : usd.toFixed(2), memo, expiresAt)));
+  return { quoteId: id, usd: usd.toFixed(2), memo, expiresAt, now, quotes, treasury: env.TREASURY, test };
+}
+
+/** The checks every payment goes through: the quote is this wallet's, for this kind, unused; the transaction pays it. */
+async function checkPayment(env: GuardEnv, wallet: string, b: any, kind: QuoteKind, now: number) {
+  const token = String(b.token ?? "") as PayToken;
+  const quoteId = String(b.quoteId ?? "");
+  const signature = String(b.signature ?? "");
+  if (!quoteId || !PAY_TOKENS.includes(token) || !/^[1-9A-HJ-NP-Za-km-z]{64,100}$/.test(signature)) throw new ApiError(400, "bad_payment", "payment needs quoteId, token and the transaction signature");
+  if (await env.DB.prepare("SELECT signature FROM payments WHERE signature = ? UNION SELECT signature FROM mcp_payments WHERE signature = ?").bind(signature, signature).first()) throw new ApiError(409, "already_used", "That transaction was already counted");
+  const q = await env.DB.prepare("SELECT * FROM quotes WHERE id = ? AND token = ? AND wallet = ?").bind(quoteId, token, wallet).first<{ base_units: string; memo: string; expires_at: number; used: number; usd: string }>();
+  // A quote for a pack of checks can't buy a year of guard, nor the other way round.
+  if (!q || !q.memo.startsWith(`sealguard:${kind}:`)) throw new ApiError(400, "bad_quote");
+  if (q.used) throw new ApiError(409, "quote_used");
+  // No request-time expiry: a payment that landed in time counts even if the page comes back late (the
+  // transaction's own block time is checked against the quote below).
+  const rpc = rpcOver(env.RPC_URL, 20_000);
+  let tx: ParsedTx | null = null;
+  try {
+    tx = (await rpc<ParsedTx | null>("getTransaction", [signature, { encoding: "jsonParsed", commitment: "confirmed", maxSupportedTransactionVersion: 1 }])) ?? null;
+  } catch (e: any) {
+    // A malformed signature is the caller's mistake; a provider hiccup is retried by the page.
+    if (/invalid/i.test(String(e?.message))) throw new ApiError(400, "bad_signature", "That isn't a transaction signature");
+    throw new ApiError(503, "chain_busy", "Solana lookups are busy; try again in a few seconds");
+  }
+  const check = verifyPaymentTx(tx, { payer: wallet, treasury: env.TREASURY, token, baseUnits: BigInt(q.base_units), memo: q.memo, paidBy: q.expires_at + PAY_SLACK_MS });
+  if (!check.ok) {
+    if (check.reason === "pending") throw new ApiError(503, "chain_busy", "The payment is still confirming; try again in a few seconds");
+    throw new ApiError(check.reason === "not_found" ? 404 : 400, check.reason);
+  }
+  // Count the transaction by its first signature, whichever of its signatures the page sent.
+  const first = (tx as any)?.transaction?.signatures?.[0];
+  if (typeof first === "string" && first !== signature) throw new ApiError(400, "bad_signature", "Send the transaction's first signature");
+  return { q, quoteId, token, signature, rpc };
+}
 
 export function unlinkedText(wallet: string): string {
   return `🔌 Unlinked from wallet <code>${esc(wallet)}</code>. SealGuard won't send alerts for it here any more. To link again, open https://guard.2cstudio.app/ and press Link Telegram.`;

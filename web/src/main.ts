@@ -9,6 +9,7 @@ import { buildTransaction, describeAction, describeFee, groupFee, packActions, T
 import { buildDustTx, JUPITER_GAP_MS } from "./dust";
 import { connect, connectSilently, disconnect, inApp, listWallets, onWalletsChange, registerMobile, signAndSendMany, type Connected } from "./wallet";
 import { buyGuard, forgetGuardSession, guardOffered, guardPriceUsd, isGuardMember, onGuardChange, setGuardWallet } from "./guard";
+import { apiKeyPage, setApiKeyWallet } from "./apikey";
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector(sel) as T;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
@@ -111,7 +112,7 @@ async function onConnected(c: Connected): Promise<void> {
   address = c.address;
   showSession();
   setStatus("");
-  void setGuardWallet(c);
+  void setGuardWallet(c).then(() => setApiKeyWallet(c));
   await doScan();
 }
 
@@ -161,6 +162,7 @@ function doScanAddress(ev: Event, input: HTMLInputElement = $<HTMLInputElement>(
   }
   connected = null;
   void setGuardWallet(null);
+  void setApiKeyWallet(null);
   showSession();
   setStatus("");
   void doScan();
@@ -172,6 +174,7 @@ async function doDisconnect(): Promise<void> {
   rememberWallet(null);
   if (connected) await disconnect(connected);
   void setGuardWallet(null);
+  void setApiKeyWallet(null);
   connected = null; address = null; result = null; lastInput = null; selected = new Set();
   $("#session").hidden = true;
   $("#report").hidden = true;
@@ -800,3 +803,12 @@ $("#fixtoggle").addEventListener("click", () => {
   list.hidden = !list.hidden;
   $("#fixtoggle").textContent = list.hidden ? `Show what will be sent (${list.children.length})` : "Hide the list";
 });
+
+// /mcp-key lands here: show the API key card, ask to connect if needed.
+if (apiKeyPage()) {
+  // Right under the headline, so it's what people who came for a key see first.
+  const hero = document.querySelector("section.hero");
+  hero?.parentNode?.insertBefore($("#apikey"), hero.nextSibling);
+  void setApiKeyWallet(null);
+  setTimeout(() => $("#apikey").scrollIntoView({ block: "start", behavior: "instant" }), 150);
+}

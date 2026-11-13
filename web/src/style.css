@@ -181,6 +181,12 @@ button.hc-b:hover{filter:brightness(1.15)}
 .linkhelp{border-top:1px solid var(--line);margin-top:8px;padding-top:12px}
 .linkhelp .cmdline{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .linkhelp code{background:var(--bg2);border:1px solid var(--line);padding:6px 10px;border-radius:8px;font-size:14px;color:var(--fg);word-break:break-all;user-select:all}
+#apikey{margin-top:24px}
+#apikey .cmdline{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+#apikey code{background:var(--bg2);border:1px solid var(--line);padding:3px 8px;border-radius:7px;font-size:14px;color:var(--fg);word-break:break-all}
+#apikey .cmdline code{padding:6px 10px;user-select:all}
+#apikey .akcfg{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:12px;overflow:auto;font-size:13px;margin:0 0 12px}
+#apikey .akcfg code{background:none;border:0;padding:0}
 
 /* ---------- features ---------- */
 .features{margin:0 0 64px}

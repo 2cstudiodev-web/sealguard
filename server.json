@@ -3,7 +3,7 @@
   "name": "io.github.2cstudiodev-web/sealguard",
   "title": "SealGuard",
   "description": "Check a Solana wallet for risky approvals and scam tokens, and find SOL you can take back.",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "websiteUrl": "https://guard.2cstudio.app/docs/mcp",
   "repository": {
     "url": "https://github.com/2cstudiodev-web/sealguard",

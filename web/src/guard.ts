@@ -95,6 +95,7 @@ async function api<T = any>(path: string, body?: unknown, method = body === unde
   return j as T;
 }
 
+export type Say = (text: string, kind?: "" | "busy" | "err" | "ok") => void;
 function note(text: string, kind: "" | "busy" | "err" | "ok" = ""): void {
   const el = $("#gstatus");
   el.textContent = text;
@@ -163,27 +164,46 @@ function render(): void {
 }
 
 /** Has the wallet sign SealGuard's sign-in message (a signature, not a transaction). */
-async function signProof(waiting: string): Promise<{ nonce: string; issuedAt: string; signature: string }> {
+async function signProof(waiting: string, say: Say = note): Promise<{ nonce: string; issuedAt: string; signature: string }> {
   const c = connected!;
   const sm: any = c.wallet.features["solana:signMessage"];
   if (!sm) throw new Error("This wallet can't sign messages; try Phantom, Solflare or Backpack.");
-  note("Preparing the sign-in message…", "busy");
+  say("Preparing the sign-in message…", "busy");
   const { nonce, issuedAt, message } = await api<{ nonce: string; issuedAt: string; message: string }>("/api/auth/nonce", { wallet: c.address });
-  note(waiting, "busy");
+  say(waiting, "busy");
   const [out] = await sm.signMessage({ account: c.account, message: new TextEncoder().encode(message) });
   return { nonce, issuedAt, signature: base58(out.signature) };
 }
 
 /** Link and unlink change where alerts go: when the sign-in is older than 10 minutes the server asks for one more
  *  signature, and this signs it and retries. */
-async function freshApi<T>(path: string): Promise<T> {
+export async function freshApi<T>(path: string, say: Say = note, why = "Changing where alerts go needs one more signature. Waiting for it…"): Promise<T> {
   const keep = (r: any) => { if (typeof r?.token === "string" && connected) { token = r.token; saveToken(connected.address, r.token); } return r as T; };
   try {
     return keep(await api<T>(path, {}));
   } catch (e: any) {
     if (e?.code !== "resign") throw e;
-    const proof = await signProof("Changing where alerts go needs one more signature. Waiting for it…");
+    const proof = await signProof(why, say);
     return keep(await api<T>(path, { proof }));
+  }
+}
+
+/** For other cards (the API key card): the signed-in API, and sign-in with messages shown where they are. */
+export const signedIn = () => Boolean(connected && token);
+export const guardApi = <T = any>(path: string, body?: unknown) => api<T>(path, body);
+export async function signInFor(say: Say): Promise<boolean> {
+  if (!connected) return false;
+  try {
+    const { nonce, issuedAt, signature } = await signProof("Waiting for your signature…", say);
+    const r = await api<{ token: string }>("/api/auth/verify", { wallet: connected.address, nonce, issuedAt, signature });
+    token = r.token;
+    saveToken(connected.address, token);
+    try { status = await api<Status>("/api/guard"); render(); } catch { /* the guard card refreshes on its own */ }
+    say("");
+    return true;
+  } catch (e: any) {
+    say(e?.message || "Sign-in failed", "err");
+    return false;
   }
 }
 
@@ -292,20 +312,32 @@ async function unlinkTelegram(): Promise<void> {
   try { await freshApi("/api/guard/unlink"); status = await api<Status>("/api/guard"); render(); note("Unlinked. Telegram alerts have stopped.", "ok"); } catch (e: any) { note(e?.message || "Failed", "err"); }
 }
 
+/** Where a payment's quote comes from, where it's reported, and what happens once it's counted. */
+export type PayFlow = { quotePath: string; payPath: string; box: string; say: Say; paid: () => Promise<void>; paidText: string };
+const GUARD_FLOW: PayFlow = {
+  quotePath: "/api/guard/quote", payPath: "/api/guard/pay", box: "#gquotes", say: note, paidText: "Paid. The guard is on.",
+  paid: async () => { status = await api<Status>("/api/guard"); render(); },
+};
+
 async function startPayment(): Promise<void> {
+  return showPayChoices(GUARD_FLOW);
+}
+export async function showPayChoices(flow: PayFlow): Promise<void> {
+  const note = flow.say;
   try {
     note("Getting today's prices…", "busy");
-    const q = await api<QuoteSet>("/api/guard/quote", {});
+    const q = await api<QuoteSet>(flow.quotePath, {});
     note("");
-    const box = $("#gquotes");
+    const box = $(flow.box);
     box.innerHTML = `${q.test ? `<p class="small keep">Test prices: this wallet is on the test list.</p>` : ""}<p class="small">Pay with:</p><div class="wallets">${q.quotes.map((x) => `<button class="wbtn" data-token="${x.token}">${esc(x.display)} ${x.token}</button>`).join("")}</div><p class="small muted">The price is held for 15 minutes. One transaction from this wallet to 2C Studio's treasury with a memo; your wallet shows the exact amount before you sign.</p>`;
-    box.querySelectorAll<HTMLButtonElement>(".wbtn").forEach((b) => b.addEventListener("click", () => pay(q, b.dataset.token!)));
+    box.querySelectorAll<HTMLButtonElement>(".wbtn").forEach((b) => b.addEventListener("click", () => pay(q, b.dataset.token!, flow)));
   } catch (e: any) {
     note(e?.message || "Couldn't get a price", "err");
   }
 }
 
-async function pay(q: QuoteSet, tokenName: string): Promise<void> {
+async function pay(q: QuoteSet, tokenName: string, flow: PayFlow): Promise<void> {
+  const note = flow.say;
   if (!connected) return;
   const quote = q.quotes.find((x) => x.token === tokenName);
   if (!quote) return;
@@ -322,16 +354,15 @@ async function pay(q: QuoteSet, tokenName: string): Promise<void> {
     for (let i = 0; i < 20; i++) {
       await new Promise((r) => setTimeout(r, 4000));
       try {
-        await api("/api/guard/pay", { quoteId: q.quoteId, token: tokenName, signature: sig });
-        status = await api<Status>("/api/guard");
-        note("Paid. The guard is on.", "ok");
-        render();
+        await api(flow.payPath, { quoteId: q.quoteId, token: tokenName, signature: sig });
+        note(flow.paidText, "ok");
+        await flow.paid();
         return;
       } catch (e: any) {
         if (e.status !== 404 && e.status !== 503) throw e;
       }
     }
-    note(`The payment was sent (${sig.slice(0, 8)}…) but hasn't been seen yet. Reload in a minute; if the guard still isn't on, write to support@2cstudio.app with that signature.`, "err");
+    note(`The payment was sent (${sig.slice(0, 8)}…) but hasn't been seen yet. Reload in a minute; if it still doesn't show, write to support@2cstudio.app with that signature.`, "err");
   } catch (e: any) {
     note(e?.message || "Payment failed; nothing was charged.", "err");
   }

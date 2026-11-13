@@ -46,13 +46,13 @@ const rpc = (method: string, params: unknown = {}, id = 1) =>
 const call = async (e: GuardEnv, name: string, address: string) => (await (await handleMcp(rpc("tools/call", { name, arguments: { address } }), e, now, scanner)).json()) as any;
 
 describe("MCP server", () => {
-  it("answers initialize and lists three read-only tools", async () => {
+  it("answers initialize and lists four read-only tools", async () => {
     const e = env();
     const init = (await (await handleMcp(rpc("initialize", { protocolVersion: "2025-06-18" }), e, now, scanner)).json()) as any;
     expect(init.result.protocolVersion).toBe("2025-06-18");
     expect(init.result.serverInfo.name).toBe("sealguard");
     const list = (await (await handleMcp(rpc("tools/list"), e, now, scanner)).json()) as any;
-    expect(list.result.tools.map((t: any) => t.name)).toEqual(["scan_wallet", "list_empty_token_accounts", "list_token_approvals"]);
+    expect(list.result.tools.map((t: any) => t.name)).toEqual(["scan_wallet", "list_empty_token_accounts", "list_token_approvals", "check_transaction"]);
     expect(TOOLS.every((t) => t.annotations.readOnlyHint)).toBe(true);
   });
 

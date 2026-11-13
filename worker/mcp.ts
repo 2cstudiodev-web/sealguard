@@ -2,14 +2,17 @@
 // app "is my Solana wallet safe?" or "how much SOL can I get back?" and get SealGuard's scan.
 //   Read-only and public: no sign-in, no transactions. Every fix links back to the SealGuard page, where the wallet
 //   owner signs it. Same rules as the page (shared web/src/scan.ts).
-//   Tools: scan_wallet, list_empty_token_accounts, list_token_approvals.
-//   Each tool call is a full chain read (RPC credits), so calls are limited per IP and per day (table mcp_usage).
+//   Tools: scan_wallet, list_empty_token_accounts, list_token_approvals (free, no key), and check_transaction
+//   (paid: an API key with prepaid checks or a guard membership; worker/mcpkeys.ts, worker/txcheck.ts).
+//   Each free call is a full chain read (RPC credits), so calls are limited per IP and per day (table mcp_usage).
 // Docs for people: /docs/mcp (web/public/docs/mcp.html).
 import { PublicKey } from "@solana/web3.js";
 import { fetchScanInput, rpcOver } from "../shared/chain";
 import { CLOSE_FEE_BPS, rentOf, scan, type Finding, type ScanResult } from "../web/src/scan";
-import type { GuardEnv } from "./guard";
+import { allowed, isMember, type GuardEnv } from "./guard";
 import { logScan } from "./scanlog";
+import { canSpend, CHECK_USD, keyFromRequest, MEMBER_MONTHLY_CHECKS, PACK_CHECKS, PACK_USD, spendCheck, walletForKey } from "./mcpkeys";
+import { checkTransaction, TxInputError, type TxCheck } from "./txcheck";
 
 const ORIGIN = "https://guard.2cstudio.app";
 const PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
@@ -20,7 +23,7 @@ const HOUR_MS = 3_600_000;
 const CORS = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "POST, GET, OPTIONS",
-  "access-control-allow-headers": "authorization, content-type, mcp-protocol-version, mcp-session-id, last-event-id",
+  "access-control-allow-headers": "authorization, x-api-key, content-type, mcp-protocol-version, mcp-session-id, last-event-id",
   "access-control-expose-headers": "mcp-session-id",
 };
 // "data:" is sent as the JSON escape data\u003a (the same JSON once parsed): some directory checkers treat any
@@ -30,7 +33,7 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body).
 const SERVER_INFO = {
   name: "sealguard",
   title: "SealGuard",
-  version: "1.0.0",
+  version: "1.1.0",
   websiteUrl: `${ORIGIN}/docs/mcp`,
   icons: [{ src: `${ORIGIN}/logo.svg`, mimeType: "image/svg+xml", sizes: ["any"] }, { src: `${ORIGIN}/icon.png`, mimeType: "image/png", sizes: ["512x512"] }],
 };
@@ -60,7 +63,25 @@ export const TOOLS = [
     inputSchema: ADDRESS,
     annotations: { readOnlyHint: true, openWorldHint: true },
   },
+  {
+    name: "check_transaction",
+    title: "Check a Solana transaction before signing",
+    description: "Before a wallet signs a Solana transaction, simulates it on mainnet and says whether it would hand anything over: the wallet account itself, a token account's owner, a standing approval on its tokens, a close authority, stake or nonce authorities. Also lists the SOL and token amounts that would leave and arrive, flags durable nonces (a signed transaction that can be sent much later) and programs SealGuard doesn't know. Verdict: do_not_sign, review or no_red_flags. Read-only: nothing is signed or sent. Paid: needs a SealGuard API key (Authorization: Bearer sgk_…); US$0.01 a check, or 1,000 a month included with the SealGuard guard. Keys at https://guard.2cstudio.app/mcp-key",
+    inputSchema: {
+      type: "object",
+      properties: {
+        transaction: { type: "string", description: "The serialized transaction, base64 (base58 also accepted). Unsigned is fine." },
+        signer: { type: "string", description: "The wallet about to sign. Defaults to the fee payer (the first signer)." },
+      },
+      required: ["transaction"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true, openWorldHint: true },
+  },
 ] as const;
+
+const KEY_PAGE = `${ORIGIN}/mcp-key`;
+const PRICE_TEXT = `US$${CHECK_USD.toFixed(2)} a check (${PACK_CHECKS} for US$${PACK_USD.toFixed(0)}), or ${MEMBER_MONTHLY_CHECKS.toLocaleString("en-US")} a month included with the SealGuard guard`;
 
 class RpcError extends Error {
   constructor(readonly code: number, message: string) { super(message); }
@@ -178,8 +199,35 @@ async function ipKey(secret: string, ip: string): Promise<string> {
 
 export type Scanner = (wallet: string) => Promise<ScanResult>;
 const chainScanner = (env: GuardEnv): Scanner => async (wallet) => scan(await fetchScanInput(rpcOver(env.RPC_URL, 30_000), wallet, () => {}, { activityUpTo: 40 }), { closeFeeBps: CLOSE_FEE_BPS });
+export type TxChecker = (transaction: unknown, signer: unknown) => Promise<TxCheck>;
+const chainTxChecker = (env: GuardEnv): TxChecker => (transaction, signer) => checkTransaction(rpcOver(env.RPC_URL, 30_000), transaction, signer);
+export type Tools = { scanner: Scanner; txChecker: TxChecker };
 
-async function callTool(env: GuardEnv, ip: string, name: string, args: any, now: number, scanner: Scanner, country: string | null = null): Promise<object> {
+/** The paid tool: key → wallet → a check available → simulate → take the check. Failures cost nothing. */
+async function paidCheck(env: GuardEnv, key: string | null, args: any, now: number, txChecker: TxChecker): Promise<object> {
+  if (!key) throw new ToolError(`check_transaction needs a SealGuard API key, sent as "Authorization: Bearer sgk_…". ${PRICE_TEXT}. Get a key at ${KEY_PAGE}. The other SealGuard tools are free and need no key.`);
+  const wallet = await walletForKey(env.DB, env.SESSION_SECRET, key, now);
+  if (!wallet) throw new ToolError(`That SealGuard API key isn't active (it may have been replaced). See your key at ${KEY_PAGE}.`);
+  if (!(await allowed(env.RL_API, `mcpkey:${wallet}`))) throw new ToolError("Too many checks in the last minute on this key. Wait a moment and try again.");
+  const g = await env.DB.prepare("SELECT paid_until FROM guards WHERE wallet = ?").bind(wallet).first<{ paid_until: number | null }>();
+  const member = isMember(g, now);
+  if (!(await canSpend(env.DB, wallet, member, now))) throw new ToolError(`This key has no checks left${member ? " this month" : ""}. ${PRICE_TEXT}. Top up at ${KEY_PAGE}.`);
+  let result: TxCheck;
+  try {
+    result = await txChecker(args?.transaction, args?.signer);
+  } catch (e) {
+    if (e instanceof TxInputError) throw new ToolError(e.message);
+    throw e;
+  }
+  const spent = await spendCheck(env.DB, wallet, member, now);
+  if (!spent) throw new ToolError(`This key ran out of checks just now. Top up at ${KEY_PAGE}.`);
+  await env.DB.prepare("INSERT INTO daily_stats (day, kind, n, closes, lamports, fee) VALUES (?, 'mcp_tx', 1, 0, 0, 0) ON CONFLICT(day, kind) DO UPDATE SET n = n + 1").bind(new Date(now).toISOString().slice(0, 10)).run().catch(() => {});
+  return { ...result, note: "SealGuard simulated this transaction on Solana mainnet just now; the chain can change before it's sent. It reads effects on the signer's own accounts and can't judge prices or whether a payment is one you meant to make.", billing: { charged_checks: 1, from: spent.from === "member" ? "guard allowance" : "prepaid checks", checks_left: spent.left } };
+}
+
+async function callTool(env: GuardEnv, ip: string, name: string, args: any, now: number, tools: Tools, country: string | null = null, key: string | null = null): Promise<object> {
+  if (name === "check_transaction") return paidCheck(env, key, args, now, tools.txChecker);
+  const scanner = tools.scanner;
   const wallet = checkAddress(args?.address);
   await countCall(env, ip, now);
   const r = await scanner(wallet);
@@ -193,7 +241,7 @@ async function callTool(env: GuardEnv, ip: string, name: string, args: any, now:
   return approvals(wallet, r);
 }
 
-async function dispatch(env: GuardEnv, ip: string, method: string, params: any, now: number, scanner: Scanner, country: string | null = null): Promise<object> {
+async function dispatch(env: GuardEnv, ip: string, method: string, params: any, now: number, tools: Tools, country: string | null = null, key: string | null = null): Promise<object> {
   switch (method) {
     case "initialize": {
       const asked = String(params?.protocolVersion ?? "");
@@ -207,12 +255,12 @@ async function dispatch(env: GuardEnv, ip: string, method: string, params: any, 
       const name = String(params?.name ?? "");
       if (!TOOLS.some((t) => t.name === name)) throw new RpcError(-32602, `Unknown tool: ${name}`);
       try {
-        const result = await callTool(env, ip, name, params?.arguments ?? {}, now, scanner, country);
+        const result = await callTool(env, ip, name, params?.arguments ?? {}, now, tools, country, key);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], structuredContent: result };
       } catch (err: any) {
         if (err instanceof ToolError) return { content: [{ type: "text", text: err.message }], isError: true };
         console.error("mcp tool", err);
-        return { content: [{ type: "text", text: "SealGuard couldn't read this wallet from the Solana network just now. Try again in a minute." }], isError: true };
+        return { content: [{ type: "text", text: name === "check_transaction" ? "SealGuard couldn't simulate this transaction on the Solana network just now. No check was charged; try again in a minute." : "SealGuard couldn't read this wallet from the Solana network just now. Try again in a minute." }], isError: true };
       }
     }
     case "resources/list":
@@ -225,12 +273,12 @@ async function dispatch(env: GuardEnv, ip: string, method: string, params: any, 
 
 const rpcError = (id: unknown, code: number, message: string) => ({ jsonrpc: "2.0", id, error: { code, message } });
 
-async function handleMessage(env: GuardEnv, ip: string, msg: any, now: number, scanner: Scanner, country: string | null = null): Promise<object | null> {
+async function handleMessage(env: GuardEnv, ip: string, msg: any, now: number, tools: Tools, country: string | null = null, key: string | null = null): Promise<object | null> {
   const isRequest = msg && typeof msg === "object" && msg.jsonrpc === "2.0" && typeof msg.method === "string";
   if (!isRequest) return msg && typeof msg === "object" && "id" in msg && !("result" in msg || "error" in msg) ? rpcError(msg.id ?? null, -32600, "Invalid request") : null;
   if (!("id" in msg)) return null; // notifications get no answer
   try {
-    return { jsonrpc: "2.0", id: msg.id, result: await dispatch(env, ip, msg.method, msg.params ?? {}, now, scanner, country) };
+    return { jsonrpc: "2.0", id: msg.id, result: await dispatch(env, ip, msg.method, msg.params ?? {}, now, tools, country, key) };
   } catch (err) {
     if (err instanceof RpcError) return rpcError(msg.id, err.code, err.message);
     console.error("mcp", err);
@@ -238,7 +286,9 @@ async function handleMessage(env: GuardEnv, ip: string, msg: any, now: number, s
   }
 }
 
-export async function handleMcp(request: Request, env: GuardEnv, now: number, scanner: Scanner = chainScanner(env)): Promise<Response> {
+export async function handleMcp(request: Request, env: GuardEnv, now: number, scanner: Scanner = chainScanner(env), txChecker: TxChecker = chainTxChecker(env)): Promise<Response> {
+  const tools: Tools = { scanner, txChecker };
+  const key = keyFromRequest(request);
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
   // A person opening the URL in a browser gets the setup guide.
   if (request.method === "GET" && (request.headers.get("accept") ?? "").includes("text/html")) return Response.redirect(`${ORIGIN}/docs/mcp`, 302);
@@ -251,9 +301,9 @@ export async function handleMcp(request: Request, env: GuardEnv, now: number, sc
   if (Array.isArray(body)) {
     if (!body.length) return json(rpcError(null, -32600, "Empty batch"), 400);
     const out = [];
-    for (const m of body.slice(0, 10)) { const r = await handleMessage(env, ip, m, now, scanner, country); if (r) out.push(r); }
+    for (const m of body.slice(0, 10)) { const r = await handleMessage(env, ip, m, now, tools, country, key); if (r) out.push(r); }
     return out.length ? json(out) : new Response(null, { status: 202, headers: CORS });
   }
-  const out = await handleMessage(env, ip, body, now, scanner, country);
+  const out = await handleMessage(env, ip, body, now, tools, country, key);
   return out ? json(out) : new Response(null, { status: 202, headers: CORS });
 }

@@ -84,6 +84,8 @@ export default {
     }
     // Read-only MCP server for AI apps (worker/mcp.ts).
     if (url.pathname === "/mcp") return handleMcp(request, env, now);
+    // Where the paid tool sends people for a key: the API key card on the main page (web/src/apikey.ts).
+    if (url.pathname === "/mcp-key") return Response.redirect(`${url.origin}/?apikey=1#apikey`, 302);
     if (url.pathname.startsWith("/api/")) {
       const r = await handleApi(request, env, url.pathname, now);
       if (r) return r;
