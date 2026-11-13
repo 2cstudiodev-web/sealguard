@@ -32,6 +32,9 @@ describe("keys and checks", () => {
     expect(await walletForKey(e.DB, e.SESSION_SECRET, a.key, now)).toBeNull();
     expect(await walletForKey(e.DB, e.SESSION_SECRET, b.key, now)).toBe(W);
     expect((await account(e.DB, W, false, now)).key?.prefix).toBe(b.prefix);
+    // The first key brought 20 free checks; the second none.
+    expect([a.trialChecks, b.trialChecks]).toEqual([20, 0]);
+    expect((await account(e.DB, W, false, now)).credits).toBe(20);
   });
 
   it("reads the key from Authorization or x-api-key", () => {
@@ -64,6 +67,7 @@ describe("check_transaction over MCP", () => {
   it("refuses a key with no checks, without simulating", async () => {
     const e = env();
     const { key } = await rotateKey(e.DB, e.SESSION_SECRET, W, now);
+    await e.DB.prepare("UPDATE mcp_credits SET credits = 0 WHERE wallet = ?").bind(W).run();
     let simulated = false;
     const r = await run(e, key, async () => { simulated = true; return ok; });
     expect(r.isError).toBe(true);
@@ -89,7 +93,7 @@ describe("check_transaction over MCP", () => {
     await e.DB.prepare("INSERT INTO guards (wallet, created_at, paid_until) VALUES (?, ?, ?)").bind(W, now, now + 86_400_000).run();
     const r = await run(e, key);
     expect(r.structuredContent.billing.from).toBe("guard allowance");
-    expect(r.structuredContent.billing.checks_left).toBe(MEMBER_MONTHLY_CHECKS - 1);
+    expect(r.structuredContent.billing.checks_left).toBe(MEMBER_MONTHLY_CHECKS - 1 + 20); // + the first key's free checks
   });
 });
 

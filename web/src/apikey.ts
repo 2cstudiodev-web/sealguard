@@ -14,6 +14,8 @@ let connected: Connected | null = null;
 let acct: Account | null = null;
 /** The key just made, shown until the page is left. */
 let fresh: string | null = null;
+/** Free checks that came with the key just made (the wallet's first). */
+let freshTrial = 0;
 
 /** The card is for people who came for it (/mcp-key), not on every visit. */
 export const apiKeyPage = () => /[?&]apikey=1\b/.test(location.search) || location.hash === "#apikey";
@@ -55,14 +57,14 @@ function render(): void {
   lines.push(`<p class="okline"><b>${left.toLocaleString("en-US")}</b> check${left === 1 ? "" : "s"} available: ${a.credits.toLocaleString("en-US")} prepaid${a.member ? ` + ${Math.max(0, a.memberMonthly - a.memberUsed).toLocaleString("en-US")} of this month's ${a.memberMonthly.toLocaleString("en-US")} with the guard` : ""}. ${a.usedTotal ? `${a.usedTotal.toLocaleString("en-US")} used so far.` : ""}</p>`);
   lines.push(`<p><button id="akbuy" class="btn small${a.credits || a.member ? "" : " primary"}">Buy ${a.packChecks} checks for US$${Number(a.packUsd).toFixed(0)}</button> <span class="small muted">US$${a.checkUsd.toFixed(2)} a check; paid in USDC, SOL or SKR from this wallet. Checks don't expire.${a.member ? "" : " Wallets with the guard get " + a.memberMonthly.toLocaleString("en-US") + " a month included."}</span></p><div id="akquotes"></div>`);
   if (fresh) {
-    lines.push(`<p><b>Your new key.</b> Copy it now: SealGuard keeps only a fingerprint and can't show it again.</p>
+    lines.push(`<p><b>Your new key.</b> Copy it now: SealGuard keeps only a fingerprint and can't show it again.${freshTrial ? ` It comes with ${freshTrial} free checks.` : ""}</p>
 <p class="cmdline"><code id="akkey">${esc(fresh)}</code> <button id="akcopy" class="btn small" type="button">Copy</button></p>
 <p class="small">Add it to your MCP client as a header on ${esc(MCP_URL)}:</p>
 <pre class="akcfg"><code>${esc(JSON.stringify({ mcpServers: { sealguard: { url: MCP_URL, headers: { Authorization: `Bearer ${fresh}` } } } }, null, 2))}</code></pre>`);
   } else if (a.key) {
     lines.push(`<p>Active key: <code>${esc(a.key.prefix)}…</code>, made ${new Date(a.key.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}${a.key.lastUsedAt ? `, last used ${new Date(a.key.lastUsedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : ""}. <button id="akrotate" class="linkbtn" type="button">Replace it</button> · <button id="akrevoke" class="linkbtn" type="button">Turn it off</button></p>`);
   } else {
-    lines.push(`<p><button id="akrotate" class="btn primary small" type="button">Make a key</button> <span class="small muted">One key per wallet; making a new one turns the old one off.</span></p>`);
+    lines.push(`<p><button id="akrotate" class="btn primary small" type="button">Make a key</button> <span class="small muted">One key per wallet; making a new one turns the old one off. A wallet's first key comes with 20 free checks.</span></p>`);
   }
   lines.push(`<p class="small muted">Only check_transaction uses checks. scan_wallet, list_empty_token_accounts and list_token_approvals stay free and need no key. A check is taken only when SealGuard returns an answer. Setup and examples: <a href="/docs/mcp">MCP for AI apps</a>.</p>`);
   box.innerHTML = lines.join("");
@@ -87,8 +89,9 @@ async function rotate(): Promise<void> {
   if (acct?.key && !confirm("Make a new key? The current one stops working right away.")) return;
   try {
     say("Making the key…", "busy");
-    const r = await freshApi<{ key: string }>("/api/mcp/key", say, KEY_SIG);
+    const r = await freshApi<{ key: string; trialChecks?: number }>("/api/mcp/key", say, KEY_SIG);
     fresh = r.key;
+    freshTrial = r.trialChecks ?? 0;
     acct = await guardApi<Account>("/api/mcp/account");
     say("");
     render();

@@ -75,7 +75,7 @@
   <li>a durable nonce, which keeps a signed transaction valid long after it was signed, and programs SealGuard doesn't know.</li>
 </ul>
 <p>The answer starts with a verdict: <code>do_not_sign</code>, <code>review</code> or <code>no_red_flags</code>. It can't judge prices, or whether a payment is one you meant to make, and the chain can change between the check and the signature.</p>
-<p><b>Price:</b> US$0.01 a check, bought 500 at a time for US$5 in USDC, SOL or SKR. Wallets with the SealGuard <a href="/#plans">guard</a> get 1,000 checks a month included. A check is taken only when SealGuard returns an answer. Get a key at <a href="/mcp-key">guard.2cstudio.app/mcp-key</a>: connect the wallet that will own it, sign in and buy checks there.</p>
+<p><b>Price:</b> a wallet's first key comes with 20 free checks. After that, US$0.01 a check, bought 500 at a time for US$5 in USDC, SOL or SKR. Wallets with the SealGuard <a href="/#plans">guard</a> get 1,000 checks a month included. A check is taken only when SealGuard returns an answer. Get a key at <a href="/mcp-key">guard.2cstudio.app/mcp-key</a>: connect the wallet that will own it, sign in and buy checks there.</p>
 <p>Send the key as a header. <b>Claude Code:</b></p>
 <pre><code>claude mcp add --transport http sealguard https://guard.2cstudio.app/mcp --header "Authorization: Bearer sgk_…"</code></pre>
 <p><b>Cursor</b> (<code>~/.cursor/mcp.json</code>):</p>

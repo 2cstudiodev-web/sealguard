@@ -10,6 +10,8 @@ export const PACK_CHECKS = 500;
 export const PACK_USD = PACK_CHECKS * CHECK_USD; // US$5
 /** Checks a month included with the guard (US$49/yr). */
 export const MEMBER_MONTHLY_CHECKS = 1000;
+/** Free checks with a wallet's first key, given once per wallet, so an agent can try it before paying. */
+export const TRIAL_CHECKS = 20;
 export const KEY_PREFIX = "sgk_";
 
 const utf8 = new TextEncoder();
@@ -41,15 +43,19 @@ export async function walletForKey(db: D1Database, secret: string, key: string, 
   return row.wallet;
 }
 
-/** Makes a new key for the wallet and retires the old one. The key itself is returned once and never stored. */
-export async function rotateKey(db: D1Database, secret: string, wallet: string, now: number): Promise<{ key: string; prefix: string }> {
+/**
+ * Makes a new key for the wallet and retires the old one. The key itself is returned once and never stored.
+ * The wallet's first key adds TRIAL_CHECKS free checks (once per wallet, however many keys follow).
+ */
+export async function rotateKey(db: D1Database, secret: string, wallet: string, now: number): Promise<{ key: string; prefix: string; trialChecks: number }> {
   const key = newKey();
+  const before = await db.prepare("SELECT trial_given FROM mcp_credits WHERE wallet = ?").bind(wallet).first<{ trial_given: number }>();
   await db.batch([
     db.prepare("UPDATE mcp_keys SET revoked_at = ? WHERE wallet = ? AND revoked_at IS NULL").bind(now, wallet),
     db.prepare("INSERT INTO mcp_keys (key_hash, wallet, prefix, created_at) VALUES (?, ?, ?, ?)").bind(keyHash(secret, key), wallet, keyPrefix(key), now),
-    db.prepare("INSERT INTO mcp_credits (wallet) VALUES (?) ON CONFLICT(wallet) DO NOTHING").bind(wallet),
+    db.prepare("INSERT INTO mcp_credits (wallet, credits, trial_given) VALUES (?, ?, 1) ON CONFLICT(wallet) DO UPDATE SET credits = credits + CASE WHEN trial_given = 0 THEN excluded.credits ELSE 0 END, trial_given = 1").bind(wallet, TRIAL_CHECKS),
   ]);
-  return { key, prefix: keyPrefix(key) };
+  return { key, prefix: keyPrefix(key), trialChecks: before?.trial_given ? 0 : TRIAL_CHECKS };
 }
 
 export async function revokeKeys(db: D1Database, wallet: string, now: number): Promise<void> {

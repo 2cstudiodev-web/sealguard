@@ -11,7 +11,7 @@ import { fetchScanInput, rpcOver } from "../shared/chain";
 import { CLOSE_FEE_BPS, rentOf, scan, type Finding, type ScanResult } from "../web/src/scan";
 import { allowed, isMember, type GuardEnv } from "./guard";
 import { logScan } from "./scanlog";
-import { canSpend, CHECK_USD, keyFromRequest, MEMBER_MONTHLY_CHECKS, PACK_CHECKS, PACK_USD, spendCheck, walletForKey } from "./mcpkeys";
+import { canSpend, CHECK_USD, keyFromRequest, MEMBER_MONTHLY_CHECKS, PACK_CHECKS, PACK_USD, spendCheck, TRIAL_CHECKS, walletForKey } from "./mcpkeys";
 import { checkTransaction, TxInputError, type TxCheck } from "./txcheck";
 
 const ORIGIN = "https://guard.2cstudio.app";
@@ -66,7 +66,7 @@ export const TOOLS = [
   {
     name: "check_transaction",
     title: "Check a Solana transaction before signing",
-    description: "Before a wallet signs a Solana transaction, simulates it on mainnet and says whether it would hand anything over: the wallet account itself, a token account's owner, a standing approval on its tokens, a close authority, stake or nonce authorities. Also lists the SOL and token amounts that would leave and arrive, flags durable nonces (a signed transaction that can be sent much later) and programs SealGuard doesn't know. Verdict: do_not_sign, review or no_red_flags. Read-only: nothing is signed or sent. Paid: needs a SealGuard API key (Authorization: Bearer sgk_…); US$0.01 a check, or 1,000 a month included with the SealGuard guard. Keys at https://guard.2cstudio.app/mcp-key",
+    description: "Before a wallet signs a Solana transaction, simulates it on mainnet and says whether it would hand anything over: the wallet account itself, a token account's owner, a standing approval on its tokens, a close authority, stake or nonce authorities. Also lists the SOL and token amounts that would leave and arrive, flags durable nonces (a signed transaction that can be sent much later) and programs SealGuard doesn't know. Verdict: do_not_sign, review or no_red_flags. Read-only: nothing is signed or sent. Paid: needs a SealGuard API key (Authorization: Bearer sgk_…); new keys come with 20 free checks, then US$0.01 a check, or 1,000 a month included with the SealGuard guard. Keys at https://guard.2cstudio.app/mcp-key",
     inputSchema: {
       type: "object",
       properties: {
@@ -205,7 +205,7 @@ export type Tools = { scanner: Scanner; txChecker: TxChecker };
 
 /** The paid tool: key → wallet → a check available → simulate → take the check. Failures cost nothing. */
 async function paidCheck(env: GuardEnv, key: string | null, args: any, now: number, txChecker: TxChecker): Promise<object> {
-  if (!key) throw new ToolError(`check_transaction needs a SealGuard API key, sent as "Authorization: Bearer sgk_…". ${PRICE_TEXT}. Get a key at ${KEY_PAGE}. The other SealGuard tools are free and need no key.`);
+  if (!key) throw new ToolError(`check_transaction needs a SealGuard API key, sent as "Authorization: Bearer sgk_…". ${PRICE_TEXT}. Get a key at ${KEY_PAGE}; new keys come with ${TRIAL_CHECKS} free checks. The other SealGuard tools are free and need no key.`);
   const wallet = await walletForKey(env.DB, env.SESSION_SECRET, key, now);
   if (!wallet) throw new ToolError(`That SealGuard API key isn't active (it may have been replaced). See your key at ${KEY_PAGE}.`);
   if (!(await allowed(env.RL_API, `mcpkey:${wallet}`))) throw new ToolError("Too many checks in the last minute on this key. Wait a moment and try again.");
