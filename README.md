@@ -35,6 +35,10 @@ npm run build && npx wrangler dev   # http://127.0.0.1:8787
 
 For live-reload while editing the page: `npx wrangler dev` in one terminal and `npm run dev` in another (Vite proxies `/rpc` to the Worker).
 
+## Made by 2C Studio
+
+SealGuard is built and run by [2C Studio](https://2cstudio.app). We also build MCP servers, Seeker apps and crypto game mechanics for other teams: [2cstudio.app/services](https://2cstudio.app/services).
+
 ## Licence
 
 MIT. See `LICENSE`.
