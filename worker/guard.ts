@@ -7,7 +7,7 @@ import { bearer, checkSignIn, FRESH_SIGNIN_MS, issueToken, makeNonce, safeEqualT
 import { buildQuotes, extendPaidUntil, GUARD_USD, jupiterPrices, TEST_QUOTES, PAY_SLACK_MS, PAY_TOKENS, QUOTE_TTL_MS, SKR_MINT, verifyPaymentTx, WSOL_MINT, type ParsedTx, type PayToken } from "./pay";
 import { esc, sendTelegram, setWebhook, startCode } from "./telegram";
 import { cleanSource, logScan, ownDevice, ownWallet, SCAN_VIA, validWallet, type ScanVia } from "./scanlog";
-import { account, CHECK_USD, PACK_CHECKS, PACK_USD, revokeKeys, rotateKey } from "./mcpkeys";
+import { account, CHECK_USD, PACK_CHECKS, PACK_USD, revokeKeys, rotateKey, trialNet } from "./mcpkeys";
 
 export interface GuardEnv {
   DB: D1Database;
@@ -255,7 +255,8 @@ export async function handleApi(request: Request, env: GuardEnv, path: string, n
     if (path === "/api/mcp/key" && method === "POST") {
       // A new key retires the old one; like Telegram linking, it needs a recent sign-in.
       const { wallet, token } = await requireFreshWallet(env, request, await readJson(request), now);
-      return json({ ...(await rotateKey(env.DB, env.SESSION_SECRET, wallet, now)), token });
+      const net = await trialNet(env.SESSION_SECRET, request.headers.get("cf-connecting-ip") ?? "unknown");
+      return json({ ...(await rotateKey(env.DB, env.SESSION_SECRET, wallet, now, net)), token });
     }
     if (path === "/api/mcp/key/revoke" && method === "POST") {
       const { wallet, token } = await requireFreshWallet(env, request, await readJson(request), now);

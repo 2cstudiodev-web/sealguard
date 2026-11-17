@@ -43,19 +43,42 @@ export async function walletForKey(db: D1Database, secret: string, key: string, 
   return row.wallet;
 }
 
+/** One free trial per network (hashed IPv4 /24 or IPv6 /48) every TRIAL_NET_DAYS, and at most TRIALS_PER_DAY overall. */
+export const TRIAL_NET_DAYS = 30, TRIALS_PER_DAY = 30;
+
 /**
  * Makes a new key for the wallet and retires the old one. The key itself is returned once and never stored.
- * The wallet's first key adds TRIAL_CHECKS free checks (once per wallet, however many keys follow).
+ * The wallet's first key adds TRIAL_CHECKS free checks (once per wallet, however many keys follow) — but only when
+ * the caller's network hasn't had a trial in TRIAL_NET_DAYS and today's trials are under TRIALS_PER_DAY (red-team
+ * review 17 Nov 2026: throwaway wallets made the trial farmable). Without `net` (tests, tools) only the wallet rule applies.
  */
-export async function rotateKey(db: D1Database, secret: string, wallet: string, now: number): Promise<{ key: string; prefix: string; trialChecks: number }> {
+export async function rotateKey(db: D1Database, secret: string, wallet: string, now: number, net?: string): Promise<{ key: string; prefix: string; trialChecks: number; trialRefused?: string }> {
   const key = newKey();
   const before = await db.prepare("SELECT trial_given FROM mcp_credits WHERE wallet = ?").bind(wallet).first<{ trial_given: number }>();
+  let trial = before?.trial_given ? 0 : TRIAL_CHECKS, trialRefused: string | undefined;
+  if (trial && net) {
+    const dayStart = now - (now % 86_400_000);
+    const [recent, today] = await Promise.all([
+      db.prepare("SELECT at FROM mcp_trial_nets WHERE net = ? AND at > ?").bind(net, now - TRIAL_NET_DAYS * 86_400_000).first(),
+      db.prepare("SELECT COUNT(*) AS n FROM mcp_trial_nets WHERE at >= ?").bind(dayStart).first<{ n: number }>(),
+    ]);
+    if (recent) { trial = 0; trialRefused = "network"; }
+    else if ((today?.n ?? 0) >= TRIALS_PER_DAY) { trial = 0; trialRefused = "daily"; }
+  }
   await db.batch([
     db.prepare("UPDATE mcp_keys SET revoked_at = ? WHERE wallet = ? AND revoked_at IS NULL").bind(now, wallet),
     db.prepare("INSERT INTO mcp_keys (key_hash, wallet, prefix, created_at) VALUES (?, ?, ?, ?)").bind(keyHash(secret, key), wallet, keyPrefix(key), now),
-    db.prepare("INSERT INTO mcp_credits (wallet, credits, trial_given) VALUES (?, ?, 1) ON CONFLICT(wallet) DO UPDATE SET credits = credits + CASE WHEN trial_given = 0 THEN excluded.credits ELSE 0 END, trial_given = 1").bind(wallet, TRIAL_CHECKS),
+    db.prepare("INSERT INTO mcp_credits (wallet, credits, trial_given) VALUES (?, ?, 1) ON CONFLICT(wallet) DO UPDATE SET credits = credits + CASE WHEN trial_given = 0 THEN excluded.credits ELSE 0 END, trial_given = 1").bind(wallet, trial),
+    ...(trial && net ? [db.prepare("INSERT INTO mcp_trial_nets (net, at) VALUES (?, ?) ON CONFLICT(net) DO UPDATE SET at = excluded.at").bind(net, now)] : []),
   ]);
-  return { key, prefix: keyPrefix(key), trialChecks: before?.trial_given ? 0 : TRIAL_CHECKS };
+  return { key, prefix: keyPrefix(key), trialChecks: trial, ...(trialRefused ? { trialRefused } : {}) };
+}
+
+/** The caller's network for the trial rule: IPv4 /24 or IPv6 /48, hashed with the secret (no raw address stored). */
+export async function trialNet(secret: string, ip: string): Promise<string> {
+  const net = ip.includes(":") ? ip.split(":").slice(0, 3).join(":") : ip.split(".").slice(0, 3).join(".");
+  const h = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${secret}:trial:${net}`));
+  return Array.from(new Uint8Array(h).slice(0, 12), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 export async function revokeKeys(db: D1Database, wallet: string, now: number): Promise<void> {

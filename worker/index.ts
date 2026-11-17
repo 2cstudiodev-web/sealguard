@@ -35,10 +35,24 @@ export function gpaFiltersOk(program: string, filters: unknown): boolean {
   return m.offset === 8 && size.length === 1 && (size[0] as any).dataSize === 80;
 }
 
+/** Browsers send Origin on every POST: only SealGuard's own site (or a local dev page on localhost) may use /rpc. */
+export function rpcOriginOk(request: Request, url: URL, env: { PUBLIC_URL?: string }): boolean {
+  const origin = request.headers.get("origin");
+  const local = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+  if (!origin) return local;
+  const allowedOrigins = new Set([url.origin, env.PUBLIC_URL ? new URL(env.PUBLIC_URL).origin : ""].filter(Boolean));
+  if (allowedOrigins.has(origin)) return true;
+  return local && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+}
+
+/** A Solana transaction is at most 1,232 bytes; base64 of that is 1,644 characters. */
+const MAX_TX_B64 = 1700;
+
 function checkRequest(body: any): string | null {
   const method = typeof body?.method === "string" ? body.method : "";
   if (!METHODS.has(method)) return `Method not allowed: ${method}`;
   const params = body?.params;
+  if ((method === "sendTransaction" || method === "simulateTransaction") && !(Array.isArray(params) && typeof params[0] === "string" && params[0].length <= MAX_TX_B64)) return "Transaction too large";
   if (JSON.stringify(params ?? null).length > 400_000) return "Params too large";
   if (method === "getProgramAccounts" || method === "getProgramAccountsV2") {
     const [program, opts] = Array.isArray(params) ? params : [];
@@ -72,13 +86,21 @@ export default {
     }
     if (url.pathname === "/rpc") {
       if (request.method !== "POST") return json({ error: "POST only" }, 405);
+      // Red-team review 17 Nov 2026: the relay is for SealGuard's own page (and the Android app, which loads the same
+      // site). Other sites can't use it from a browser, and every caller is limited per address, per network and, for
+      // sending or simulating transactions, more tightly still.
+      if (!rpcOriginOk(request, url, env)) return json({ jsonrpc: "2.0", id: null, error: { code: 403, message: "This RPC relay only serves SealGuard's own pages" } }, 403);
       const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
-      if (!(await allowed(env.RL_RPC, ip.includes(":") ? ip.split(":").slice(0, 4).join(":") : ip))) return json({ jsonrpc: "2.0", id: null, error: { code: 429, message: "Too many requests" } }, 429);
+      const host = ip.includes(":") ? ip.split(":").slice(0, 4).join(":") : ip;
+      const net = ip.includes(":") ? ip.split(":").slice(0, 3).join(":") : ip.split(".").slice(0, 3).join(".");
+      const tooMany = json({ jsonrpc: "2.0", id: null, error: { code: 429, message: "Too many requests" } }, 429);
+      if (!(await allowed(env.RL_RPC, host)) || !(await allowed(env.RL_RPC, `net:${net}`))) return tooMany;
       if (!env.RPC_URL) return json({ error: "RPC not configured" }, 503);
       let body: any;
       try { body = await request.json(); } catch { return json({ error: "Bad JSON" }, 400); }
       const bad = checkRequest(body);
       if (bad) return json({ jsonrpc: "2.0", id: body?.id ?? null, error: { code: -32601, message: bad } }, 400);
+      if ((body.method === "sendTransaction" || body.method === "simulateTransaction") && !(await allowed(env.RL_API, `rpcsend:${host}`))) return tooMany;
       const upstream = await fetch(env.RPC_URL, { signal: AbortSignal.timeout(25_000), method: "POST", headers: { "content-type": "application/json", "user-agent": "SealGuard/0.1 (+https://guard.2cstudio.app)" }, body: JSON.stringify({ jsonrpc: "2.0", id: body.id ?? 1, method: body.method, params: body.params }) });
       const text = await upstream.text();
       return new Response(text, { status: upstream.ok ? 200 : 502, headers: { "content-type": "application/json", "cache-control": "no-store" } });
