@@ -10,7 +10,7 @@ import { PublicKey } from "@solana/web3.js";
 import { fetchScanInput, rpcOver } from "../shared/chain";
 import { CLOSE_FEE_BPS, rentOf, scan, type Finding, type ScanResult } from "../web/src/scan";
 import { allowed, isMember, type GuardEnv } from "./guard";
-import { logScan } from "./scanlog";
+import { logScan, ownWallet } from "./scanlog";
 import { canSpend, CHECK_USD, keyFromRequest, MEMBER_MONTHLY_CHECKS, PACK_CHECKS, PACK_USD, spendCheck, TRIAL_CHECKS, walletForKey } from "./mcpkeys";
 import { checkTransaction, TxInputError, type TxCheck } from "./txcheck";
 
@@ -222,7 +222,9 @@ async function paidCheck(env: GuardEnv, key: string | null, args: any, now: numb
   }
   const spent = await spendCheck(env.DB, wallet, member, now);
   if (!spent) throw new ToolError(`This key ran out of checks just now. Top up at ${KEY_PAGE}.`);
-  await env.DB.prepare("INSERT INTO daily_stats (day, kind, n, closes, lamports, fee) VALUES (?, 'mcp_tx', 1, 0, 0, 0) ON CONFLICT(day, kind) DO UPDATE SET n = n + 1").bind(new Date(now).toISOString().slice(0, 10)).run().catch(() => {});
+  // 2C Studio's own wallets (table own_wallets) are not counted in the stats, like scans and fixes (user, 20 Nov 2026).
+  if (!(await ownWallet(env.DB, wallet)))
+    await env.DB.prepare("INSERT INTO daily_stats (day, kind, n, closes, lamports, fee) VALUES (?, 'mcp_tx', 1, 0, 0, 0) ON CONFLICT(day, kind) DO UPDATE SET n = n + 1").bind(new Date(now).toISOString().slice(0, 10)).run().catch(() => {});
   return { ...result, note: "SealGuard simulated this transaction on Solana mainnet just now; the chain can change before it's sent. It reads effects on the signer's own accounts and can't judge prices or whether a payment is one you meant to make.", billing: { charged_checks: 1, from: spent.from === "member" ? "guard allowance" : "prepaid checks", checks_left: spent.left } };
 }
 
